@@ -1,0 +1,217 @@
+# Copyright 2026 The Volcano Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# KWOK Deployment for Volcano Benchmark
+# This deploys KWOK controller and Stage configurations for simulating nodes
+
+---
+# KWOK Controller Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kwok-controller
+  namespace: kube-system
+  labels:
+    app: kwok-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kwok-controller
+  template:
+    metadata:
+      labels:
+        app: kwok-controller
+    spec:
+      serviceAccountName: kwok-controller
+      containers:
+      - name: kwok-controller
+        image: registry.k8s.io/kwok/kwok:v0.6.0
+        args:
+        - --manage-all-nodes=false
+        - --manage-nodes-with-annotation-selector=kwok.x-k8s.io/node=fake
+        - --manage-nodes-with-label-selector=
+        - --disregard-status-with-annotation-selector=kwok.x-k8s.io/status=custom
+        - --disregard-status-with-label-selector=
+        - --cidr=10.0.0.1/24
+        - --node-ip=$(POD_IP)
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      restartPolicy: Always
+
+---
+# ServiceAccount for KWOK Controller
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kwok-controller
+  namespace: kube-system
+
+---
+# ClusterRole for KWOK Controller
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kwok-controller
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+- apiGroups: [""]
+  resources: ["nodes/status"]
+  verbs: ["patch", "update"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "patch", "update", "delete"]
+- apiGroups: [""]
+  resources: ["pods/status"]
+  verbs: ["patch", "update"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# ClusterRoleBinding for KWOK Controller
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kwok-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kwok-controller
+subjects:
+- kind: ServiceAccount
+  name: kwok-controller
+  namespace: kube-system
+
+---
+# Stage: Fast Pod Ready
+# This stage quickly transitions pods to Ready state on fake nodes
+apiVersion: kwok.x-k8s.io/v1alpha1
+kind: Stage
+metadata:
+  name: pod-ready
+spec:
+  resourceRef:
+    apiGroup: v1
+    kind: Pod
+  selector:
+    matchExpressions:
+    - key: '.metadata.deletionTimestamp'
+      operator: 'DoesNotExist'
+    - key: '.status.podIP'
+      operator: 'DoesNotExist'
+  next:
+    statusTemplate: |
+      {{ $now := Now }}
+      conditions:
+      - lastTransitionTime: {{ $now | Quote }}
+        status: "True"
+        type: Initialized
+      - lastTransitionTime: {{ $now | Quote }}
+        status: "True"
+        type: Ready
+      - lastTransitionTime: {{ $now | Quote }}
+        status: "True"
+        type: ContainersReady
+      - lastTransitionTime: {{ $now | Quote }}
+        status: "True"
+        type: PodScheduled
+      containerStatuses:
+      {{ range $index, $item := .spec.containers }}
+      - image: {{ $item.image | Quote }}
+        name: {{ $item.name | Quote }}
+        ready: true
+        restartCount: 0
+        started: true
+        state:
+          running:
+            startedAt: {{ $now | Quote }}
+      {{ end }}
+      hostIP: {{ NodeIPWith .spec.nodeName | Quote }}
+      phase: Running
+      podIP: {{ PodIPWith .spec.nodeName ( or .spec.hostNetwork false ) ( or .metadata.uid "" ) ( or .metadata.name "" ) ( or .metadata.namespace "" ) | Quote }}
+      startTime: {{ $now | Quote }}
+
+---
+# Stage: Pod Complete (for completed jobs)
+apiVersion: kwok.x-k8s.io/v1alpha1
+kind: Stage
+metadata:
+  name: pod-complete
+spec:
+  resourceRef:
+    apiGroup: v1
+    kind: Pod
+  selector:
+    matchExpressions:
+    - key: '.metadata.deletionTimestamp'
+      operator: 'DoesNotExist'
+    - key: '.status.phase'
+      operator: 'In'
+      values:
+      - 'Running'
+    - key: '.metadata.ownerReferences.[].kind'
+      operator: 'In'
+      values:
+      - 'Job'
+  delay:
+    durationMilliseconds: 1000
+    jitterDurationMilliseconds: 500
+  next:
+    statusTemplate: |
+      {{ $now := Now }}
+      containerStatuses:
+      {{ range $index, $item := .spec.containers }}
+      - image: {{ $item.image | Quote }}
+        name: {{ $item.name | Quote }}
+        ready: false
+        restartCount: 0
+        started: false
+        state:
+          terminated:
+            exitCode: 0
+            finishedAt: {{ $now | Quote }}
+            reason: Completed
+            startedAt: {{ $now | Quote }}
+      {{ end }}
+      phase: Succeeded
+
+---
+# Stage: Pod Delete
+apiVersion: kwok.x-k8s.io/v1alpha1
+kind: Stage
+metadata:
+  name: pod-delete
+spec:
+  resourceRef:
+    apiGroup: v1
+    kind: Pod
+  selector:
+    matchExpressions:
+    - key: '.metadata.deletionTimestamp'
+      operator: 'Exists'
+  next:
+    delete: true

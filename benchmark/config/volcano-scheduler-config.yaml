@@ -1,5 +1,4 @@
-#!/bin/bash
-# Copyright 2019 The Volcano Authors.
+# Copyright 2026 The Volcano Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,15 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -e
+# Volcano Scheduler Configuration for Benchmark
+# This configuration enables Gang Scheduling with optimized plugins
 
-if [ $# -eq 0 ]; then
-  echo "Error: Please provide the number of nodes to uninstall."
-  echo "Usage: $0 <number_of_nodes>"
-  exit 1
-fi
-
-for (( i=0;i<$1; i++))
-do
-  kubectl delete node kwok-node-"$i"
-done
+actions: "enqueue, allocate, backfill"
+tiers:
+- plugins:
+  - name: priority
+  - name: gang
+    enablePreemptable: false
+  - name: conformance
+- plugins:
+  - name: overcommit
+  - name: drf
+    enablePreemptable: false
+  - name: predicates
+    arguments:
+      predicate.CacheEnable: true
+  - name: proportion
+  - name: nodeorder

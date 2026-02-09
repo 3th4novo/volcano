@@ -1,0 +1,65 @@
+# Copyright 2026 The Volcano Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Prometheus Configuration for Volcano Benchmark
+# Scrape interval set to 1 second for fine-grained monitoring
+
+global:
+  scrape_interval: 1s
+  evaluation_interval: 1s
+  scrape_timeout: 1s
+
+scrape_configs:
+  # Scrape Volcano Scheduler metrics
+  - job_name: 'volcano-scheduler'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['volcano-system']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: volcano-scheduler
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        regex: "8080"
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+    metrics_path: /metrics
+
+  # Scrape Kube-State-Metrics
+  - job_name: 'kube-state-metrics'
+    static_configs:
+      - targets: ['kube-state-metrics.monitoring:8080']
+
+  # Scrape Volcano Controller metrics
+  - job_name: 'volcano-controller'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['volcano-system']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: volcano-controller-manager
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        regex: "8080"
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+    metrics_path: /metrics
