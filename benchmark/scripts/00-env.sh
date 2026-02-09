@@ -33,8 +33,14 @@ export NUM_FAKE_NODES="${NUM_FAKE_NODES:-10}"
 export TOTAL_PODS=$((NUM_JOBS * PODS_PER_JOB))
 
 # Version configuration
+# Set USE_LOCAL_IMAGES=true to use locally built images (requires `make images` first)
+export USE_LOCAL_IMAGES="${USE_LOCAL_IMAGES:-true}"
 export VOLCANO_VERSION="${VOLCANO_VERSION:-v1.10.0}"
 export KWOK_VERSION="${KWOK_VERSION:-v0.6.0}"
+
+# Local image configuration (used when USE_LOCAL_IMAGES=true)
+export LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-latest}"
+export VOLCANO_IMAGE_REPO="${VOLCANO_IMAGE_REPO:-volcanosh}"
 
 # Paths
 export SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,7 +51,8 @@ export DASHBOARDS_DIR="${BENCHMARK_DIR}/dashboards"
 export RESULTS_DIR="${BENCHMARK_DIR}/results"
 
 # Helm chart path (relative to volcano repo root)
-export VOLCANO_REPO_ROOT="$(dirname "$(dirname "$BENCHMARK_DIR")")"
+# Fix: BENCHMARK_DIR is already at volcano-repo/benchmark, so only need one dirname
+export VOLCANO_REPO_ROOT="$(dirname "$BENCHMARK_DIR")"
 export HELM_CHART_PATH="${VOLCANO_REPO_ROOT}/installer/helm/chart/volcano"
 
 # Access URLs

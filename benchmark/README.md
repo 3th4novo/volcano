@@ -33,11 +33,68 @@ chmod +x *.sh
 
 This will:
 1. Create a Kind cluster
-2. Install Volcano
-3. Deploy KWOK and fake nodes
-4. Setup Prometheus and Grafana
-5. Run the benchmark (20 jobs × 50 pods)
-6. Collect results
+2. Build Volcano images from source code
+3. Load images into Kind cluster
+4. Install Volcano
+5. Deploy KWOK and fake nodes
+6. Setup Prometheus and Grafana
+7. Run the benchmark (20 jobs × 50 pods)
+8. Collect results
+
+## Image Configuration
+
+### Option 1: Use Local Built Images (Default)
+
+By default, the benchmark builds Volcano images from the current source code:
+
+```bash
+cd benchmark/scripts
+./run-all.sh
+```
+
+**Workflow:**
+1. Creates Kind cluster
+2. Runs `make images TAG=latest` to build local images
+3. Loads images into Kind cluster
+4. Installs Volcano using local images
+5. Runs benchmark
+
+**Customize image tag:**
+```bash
+LOCAL_IMAGE_TAG=dev ./run-all.sh
+```
+
+### Option 2: Use Official Images
+
+Set `USE_LOCAL_IMAGES=false` and specify the version:
+
+```bash
+cd benchmark/scripts
+
+# Use default version v1.10.0
+USE_LOCAL_IMAGES=false ./run-all.sh
+
+# Use specific version, for example v1.9.0
+USE_LOCAL_IMAGES=false VOLCANO_VERSION=v1.9.0 ./run-all.sh
+```
+
+**Workflow:**
+1. Creates Kind cluster
+2. Skips image build step
+3. Pulls `volcanosh/*:v1.10.0` images from Docker Hub
+4. Installs Volcano
+5. Runs benchmark
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USE_LOCAL_IMAGES` | `true` | Whether to use locally built images |
+| `LOCAL_IMAGE_TAG` | `latest` | Tag for local images |
+| `VOLCANO_VERSION` | `v1.10.0` | Official image version (only when `USE_LOCAL_IMAGES=false`) |
+| `VOLCANO_IMAGE_REPO` | `volcanosh` | Image repository name |
+
+Environment variables are defined in `scripts/00-env.sh`.
 
 ## Directory Structure
 
@@ -63,11 +120,12 @@ benchmark/
 ├── scripts/
 │   ├── 00-env.sh                      # Environment variables and functions
 │   ├── 01-setup-cluster.sh            # Create Kind cluster
-│   ├── 02-install-volcano.sh          # Install Volcano
-│   ├── 03-setup-kwok.sh               # Deploy KWOK and fake nodes
-│   ├── 04-setup-monitoring.sh         # Deploy monitoring stack
-│   ├── 05-run-benchmark.sh            # Run the benchmark test
-│   ├── 06-collect-results.sh          # Collect results from Prometheus
+│   ├── 02-build-images.sh             # Build Volcano images from source
+│   ├── 03-install-volcano.sh          # Install Volcano
+│   ├── 04-setup-kwok.sh               # Deploy KWOK and fake nodes
+│   ├── 05-setup-monitoring.sh         # Deploy monitoring stack
+│   ├── 06-run-benchmark.sh            # Run the benchmark test
+│   ├── 07-collect-results.sh          # Collect results from Prometheus
 │   ├── 99-cleanup.sh                  # Cleanup resources
 │   └── run-all.sh                     # One-click run all steps
 └── results/                           # Benchmark results output
@@ -83,20 +141,23 @@ cd benchmark/scripts
 # Step 1: Create Kind cluster
 ./01-setup-cluster.sh
 
-# Step 2: Install Volcano
-./02-install-volcano.sh
+# Step 2: Build Volcano images from source (optional, skip if using official images)
+./02-build-images.sh
 
-# Step 3: Setup KWOK and fake nodes
-./03-setup-kwok.sh
+# Step 3: Install Volcano
+./03-install-volcano.sh
 
-# Step 4: Setup monitoring
-./04-setup-monitoring.sh
+# Step 4: Setup KWOK and fake nodes
+./04-setup-kwok.sh
 
-# Step 5: Run benchmark
-./05-run-benchmark.sh
+# Step 5: Setup monitoring
+./05-setup-monitoring.sh
 
-# Step 6: Collect results
-./06-collect-results.sh
+# Step 6: Run benchmark
+./06-run-benchmark.sh
+
+# Step 7: Collect results
+./07-collect-results.sh
 ```
 
 ## Monitoring
