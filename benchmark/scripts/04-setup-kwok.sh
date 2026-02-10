@@ -28,6 +28,14 @@ source "${SCRIPT_DIR}/00-env.sh"
 main() {
     log_step "Setting up KWOK and fake nodes"
     
+    # Install KWOK CRDs first
+    log_info "Installing KWOK CRDs..."
+    kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERSION}/kwok.yaml"
+    
+    # Wait for CRDs to be established
+    log_info "Waiting for KWOK CRDs to be ready..."
+    kubectl wait --for=condition=Established crd/stages.kwok.x-k8s.io --timeout=60s || true
+    
     # Deploy KWOK controller and stages
     log_info "Deploying KWOK controller..."
     kubectl apply -f "${MANIFESTS_DIR}/kwok/kwok-deployment.yaml"

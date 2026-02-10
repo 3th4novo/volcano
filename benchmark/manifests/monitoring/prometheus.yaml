@@ -81,47 +81,23 @@ data:
       scrape_timeout: 1s
 
     scrape_configs:
-      # Scrape Volcano Scheduler metrics
+      # Scrape Volcano Scheduler metrics via Service endpoint
+      # Using static_configs instead of kubernetes_sd_configs because
+      # the Volcano Scheduler Pod doesn't declare containerPort in its spec
       - job_name: 'volcano-scheduler'
-        kubernetes_sd_configs:
-          - role: pod
-            namespaces:
-              names: ['volcano-system']
-        relabel_configs:
-          - source_labels: [__meta_kubernetes_pod_label_app]
-            regex: volcano-scheduler
-            action: keep
-          - source_labels: [__meta_kubernetes_pod_container_port_number]
-            regex: "8080"
-            action: keep
-          - source_labels: [__meta_kubernetes_pod_name]
-            target_label: pod
-          - source_labels: [__meta_kubernetes_namespace]
-            target_label: namespace
+        static_configs:
+          - targets: ['volcano-scheduler-service.volcano-system.svc.cluster.local:8080']
         metrics_path: /metrics
 
       # Scrape Kube-State-Metrics
       - job_name: 'kube-state-metrics'
         static_configs:
-          - targets: ['kube-state-metrics.monitoring:8080']
+          - targets: ['kube-state-metrics.monitoring.svc.cluster.local:8080']
 
-      # Scrape Volcano Controller metrics
+      # Scrape Volcano Controller metrics via Service endpoint
       - job_name: 'volcano-controller'
-        kubernetes_sd_configs:
-          - role: pod
-            namespaces:
-              names: ['volcano-system']
-        relabel_configs:
-          - source_labels: [__meta_kubernetes_pod_label_app]
-            regex: volcano-controller-manager
-            action: keep
-          - source_labels: [__meta_kubernetes_pod_container_port_number]
-            regex: "8080"
-            action: keep
-          - source_labels: [__meta_kubernetes_pod_name]
-            target_label: pod
-          - source_labels: [__meta_kubernetes_namespace]
-            target_label: namespace
+        static_configs:
+          - targets: ['volcano-controllers-service.volcano-system.svc.cluster.local:8081']
         metrics_path: /metrics
 
 ---

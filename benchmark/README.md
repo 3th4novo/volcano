@@ -64,6 +64,11 @@ cd benchmark/scripts
 LOCAL_IMAGE_TAG=dev ./run-all.sh
 ```
 
+**Force reinstall Volcano**
+```bash
+FORCE_REINSTALL=true ./run-all.sh
+```
+
 ### Option 2: Use Official Images
 
 Set `USE_LOCAL_IMAGES=false` and specify the version:

@@ -30,12 +30,25 @@ create_vcjobs() {
     
     local template="${MANIFESTS_DIR}/workloads/vcjob-template.yaml"
     
+    # First, check if any jobs already exist and delete them
+    local existing_jobs=$(kubectl get jobs -n "${NAMESPACE}" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+    if [[ -n "$existing_jobs" ]]; then
+        log_warn "Found existing jobs in namespace '${NAMESPACE}': $existing_jobs"
+        log_info "Deleting existing jobs..."
+        kubectl delete jobs -n "${NAMESPACE}" --all --wait=false
+        sleep 5  # Wait for jobs to be deleted
+    fi
+    
     for i in $(seq 0 $((NUM_JOBS - 1))); do
         local job_name="benchmark-job-${i}"
         log_debug "Creating VCJob: ${job_name}"
         
         # Replace INDEX placeholder with actual index
-        sed "s/INDEX/${i}/g" "${template}" | kubectl apply -f -
+        # Use 'create' instead of 'apply' to avoid webhook validation issues on updates
+        sed "s/INDEX/${i}/g" "${template}" | kubectl create -f - 2>&1 || {
+            log_error "Failed to create job ${job_name}"
+            return 1
+        }
     done
     
     log_info "All ${NUM_JOBS} VCJobs created"
@@ -49,9 +62,16 @@ wait_for_all_pods_scheduled() {
     local last_count=0
     
     while true; do
-        local scheduled_count=$(kubectl get pods -n "${NAMESPACE}" \
-            -o jsonpath='{.items[*].status.conditions[?(@.type=="PodScheduled")].status}' 2>/dev/null | \
-            tr ' ' '\n' | grep -c "True" || echo "0")
+        # Count scheduled pods - use wc -l for more reliable counting
+        local scheduled_count
+        scheduled_count=$(kubectl get pods -n "${NAMESPACE}" \
+            --field-selector=status.phase!=Pending \
+            --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        
+        # Ensure scheduled_count is a valid number
+        if ! [[ "$scheduled_count" =~ ^[0-9]+$ ]]; then
+            scheduled_count=0
+        fi
         
         if [[ "$scheduled_count" -ge "$TOTAL_PODS" ]]; then
             log_info "All ${TOTAL_PODS} pods have been scheduled!"
