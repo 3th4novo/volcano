@@ -47,9 +47,12 @@ kubectl delete namespace volcano-system --ignore-not-found=true 2>/dev/null || t
 
 # Clean up Volcano CRDs (left behind after helm uninstall)
 log_info "Cleaning up Volcano CRDs..."
-kubectl get crd -o name 2>/dev/null | grep 'volcano\.sh' | while read -r crd; do
-    kubectl delete "$crd" --ignore-not-found=true 2>/dev/null || true
-done
+VOLCANO_CRDS=$(kubectl get crd -o name 2>/dev/null | grep 'volcano\.sh' || true)
+if [[ -n "${VOLCANO_CRDS}" ]]; then
+    echo "${VOLCANO_CRDS}" | while read -r crd; do
+        kubectl delete "$crd" --ignore-not-found=true 2>/dev/null || true
+    done
+fi
 
 # Clean up KWOK controller if deployed
 kubectl delete deployment kwok-controller -n kube-system --ignore-not-found=true 2>/dev/null || true
