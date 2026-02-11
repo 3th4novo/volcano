@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 08-cleanup.sh — Clean up resources
+# cleanup.sh — Clean up resources
 # Usage:
-#   ./scripts/08-cleanup.sh                   # Clean up resources only, keep the cluster
-#   ./scripts/08-cleanup.sh --delete-cluster   # Clean up resources and delete the cluster
+#   ./scripts/cleanup.sh                   # Clean up resources only, keep the cluster
+#   ./scripts/cleanup.sh --delete-cluster   # Clean up resources and delete the cluster
 
 source "$(dirname "$0")/common.sh"
 require_cmd kubectl

@@ -6,6 +6,7 @@
   "links": [],
   "panels": [
     {
+      "id": 1,
       "title": "Pod Scheduling Progress",
       "type": "timeseries",
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
@@ -29,7 +30,8 @@
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } }
     },
     {
-      "title": "Scheduling Latency Distribution (ms)",
+      "id": 2,
+      "title": "Scheduling Latency (ms)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -39,6 +41,7 @@
       ]
     },
     {
+      "id": 3,
       "title": "Job E2E Scheduling Duration",
       "type": "table",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },

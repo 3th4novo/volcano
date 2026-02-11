@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 04-install-volcano.sh — Install Volcano
+# install-volcano.sh — Install Volcano
 
 source "$(dirname "$0")/common.sh"
 require_cmd kubectl helm

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 01-create-cluster.sh — Create a Kind cluster
+# create-cluster.sh — Create a Kind cluster
 
 source "$(dirname "$0")/common.sh"
 require_cmd kind docker kubectl

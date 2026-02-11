@@ -28,7 +28,7 @@ benchmark/
 │   ├── kwok/                   # KWOK Stages
 │   ├── monitoring/             # Prometheus + Grafana
 │   └── volcano/                # Scheduler config + Queue
-├── scripts/                    # Bash scripts (01~08)
+├── scripts/                    # Bash scripts
 ├── pkg/                        # Go shared library
 ├── testcases/gang/             # Gang scheduling test cases
 └── results/                    # Test results (git ignored)
@@ -142,7 +142,7 @@ Or use the test script directly with more control:
 
 ```bash
 # Run with custom timeout
-bash scripts/06-run-tests.sh gang/case_20x50
+bash scripts/run-tests.sh gang/case_20x50
 ```
 
 The test binary is compiled from Go test files under `testcases/gang/` and executed with `-test.v` for verbose output. Results are saved to `results/`.
@@ -194,7 +194,7 @@ Key environment variables (set before running `make` or export in your shell):
 - **KWOK nodes not becoming Ready**: Check KWOK controller logs: `kubectl logs -n kube-system deployment/kwok-controller`.
 - **Volcano pods CrashLoopBackOff**: Verify images were loaded correctly: `docker exec volcano-benchmark-control-plane crictl images | grep volcanosh`.
 - **Prometheus shows no data**: Wait 30 seconds after test completion for metrics to be scraped. Verify targets at http://localhost:30090/targets.
-- **Tests timeout**: Increase the timeout: `bash scripts/06-run-tests.sh gang` (default is 600s). Ensure enough KWOK nodes are available for the pod count.
+- **Tests timeout**: Increase the timeout: `bash scripts/run-tests.sh gang` (default is 600s). Ensure enough KWOK nodes are available for the pod count.
 
 ## Dependencies
 

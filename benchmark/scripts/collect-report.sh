@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 07-collect-report.sh — Collect test report
+# collect-report.sh — Collect test report
 
 source "$(dirname "$0")/common.sh"
 require_cmd curl jq
@@ -60,3 +60,7 @@ log_info "  Pods created: ${POD_CREATED}"
 log_info "  Pods scheduled: ${POD_SCHEDULED}"
 log_info ""
 log_info "Grafana dashboard: http://localhost:30080/d/volcano-benchmark"
+
+# Export Grafana charts as PNG images
+log_info "Exporting Grafana dashboard charts..."
+bash "$(dirname "$0")/export-grafana-charts.sh" || log_warn "Chart export failed (Image Renderer may not be available)"

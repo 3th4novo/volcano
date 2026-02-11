@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 02-create-kwok-nodes.sh — Create KWOK simulated nodes
+# create-kwok-nodes.sh — Create KWOK simulated nodes
 
 source "$(dirname "$0")/common.sh"
 require_cmd kubectl

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 06-run-tests.sh — Run tests (accepts test case name as parameter)
+# run-tests.sh — Run tests (accepts test case name as parameter)
 # Usage:
-#   ./scripts/06-run-tests.sh gang              # Run all tests under the gang directory
-#   ./scripts/06-run-tests.sh gang/case_20x50   # Run a specific test case TestGang20x50
+#   ./scripts/run-tests.sh gang              # Run all tests under the gang directory
+#   ./scripts/run-tests.sh gang/case_20x50   # Run a specific test case TestGang20x50
 
 source "$(dirname "$0")/common.sh"
 require_cmd go

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 05-install-monitoring.sh — Install monitoring components
+# install-monitoring.sh — Install monitoring components
 
 source "$(dirname "$0")/common.sh"
 require_cmd kubectl

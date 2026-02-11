@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 03-build-images.sh — Build Volcano images
+# build-images.sh — Build Volcano images
 
 source "$(dirname "$0")/common.sh"
 require_cmd docker kind make
