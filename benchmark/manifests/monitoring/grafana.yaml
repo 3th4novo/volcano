@@ -1,0 +1,162 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus.monitoring.svc:9090
+        isDefault: true
+        editable: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: monitoring
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: monitoring
+data:
+  volcano-benchmark.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "title": "Pod Scheduling Progress",
+          "type": "timeseries",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "lineWidth": 2, "fillOpacity": 10, "pointSize": 5 },
+              "unit": "short"
+            },
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "Created" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+              { "matcher": { "id": "byName", "options": "Scheduled" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+              { "matcher": { "id": "byName", "options": "Deleted" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+            ]
+          },
+          "targets": [
+            { "expr": "count(kube_pod_info{namespace=\"default\"})", "legendFormat": "Created", "refId": "A"        { "expr": "count(kube_pod_status_scheduled{namespace=\"default\",condition=\"true\"})", "legendFormat": "Scheduled", "refId": "B" },
+            { "expr": "count(kube_pod_deletion_timestamp{namespace=\"default\"}) or vector(0)", "legendFormat": "Deleted", "refId": "C" }
+          ],
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } }
+        },
+        {
+          "title": "Scheduling Latency Distribution (ms)",
+          "type": "histogram",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "targets": [
+            { "expr": "histogram_quantile(0.5, rate(volcano_e2e_scheduling_latency_milliseconds_bucket[1m]))", "legendFormat": "P50", "refId": "A" },
+            { "expr": "histogram_quantile(0.99, rate(volcano_e2e_scheduling_latency_milliseconds_bucket[1m]))", "legendFormat": "P99", "refId": "B" }
+          ]
+        },
+        {
+          "title": "Job E2E Scheduling Duration",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "targets": [
+            { "expr": "volcano_e2e_job_scheduling_duration{job_namespace=\"default\"}", "format": "table", "instant": true, "refId": "A" }
+          ]
+        }
+      ],
+      "refresh": "1s",
+      "schemaVersion": 39,
+      "templating": {
+        "list": [
+          { "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" }, "hide": 0, "inclfalse, "name": "DS_PROMETHEUS", "query": "prometheus", "type": "datasource" }
+        ]
+      },
+      "time": { "from": "now-5m", "to": "now" },
+      "title": "Volcano Benchmark",
+      "uid": "volcano-benchmark"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.4.0
+          env:
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: "Admin"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin"
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30080
