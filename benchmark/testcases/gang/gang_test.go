@@ -140,6 +140,14 @@ func CreateGangJobs(ctx context.Context, cfg VCJobConfig) (time.Time, error) {
 func RunGangTest(t *testing.T, configs []VCJobConfig) {
 	ctx := context.Background()
 
+	// Clean up any pre-existing VCJobs to allow re-runs without conflicts
+	t.Log("Cleaning up pre-existing VCJobs...")
+	if err := benchpkg.CleanupVCJobs(ctx, "default"); err != nil {
+		t.Logf("Warning: failed to cleanup old VCJobs: %v", err)
+	}
+	// Wait briefly for cleanup to propagate
+	time.Sleep(3 * time.Second)
+
 	totalPods := 0
 	for _, cfg := range configs {
 		totalPods += cfg.Count * int(cfg.Replicas)

@@ -21,6 +21,7 @@ fi
 
 log_info "Compiling test binary: testcases/${SCENE_DIR}..."
 mkdir -p "${BENCHMARK_DIR}/bin"
+mkdir -p "${BENCHMARK_DIR}/results"
 cd "${VOLCANO_ROOT}"
 go test -c -o "${BENCHMARK_DIR}/bin/test-${SCENE_DIR}" "./benchmark/testcases/${SCENE_DIR}/..."
 

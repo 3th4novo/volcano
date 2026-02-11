@@ -4,8 +4,19 @@
 source "$(dirname "$0")/common.sh"
 require_cmd kubectl helm
 
-log_info "Installing Volcano CRDs..."
-kubectl apply -f "${VOLCANO_ROOT}/config/crd/volcano/bases/"
+# Clean up any pre-existing Volcano CRDs that lack Helm ownership labels.
+# This prevents "invalid ownership metadata" errors during helm install.
+log_info "Cleaning up any pre-existing Volcano CRDs..."
+kubectl get crd -o name 2>/dev/null | grep 'volcano\.sh' | while read -r crd; do
+    log_info "  Deleting $crd"
+    kubectl delete "$crd" --ignore-not-found
+done
+
+# Also uninstall any previous Helm release to ensure a clean state
+if helm status volcano -n volcano-system &>/dev/null; then
+    log_info "Removing previous Volcano Helm release..."
+    helm uninstall volcano -n volcano-system --wait
+fi
 
 log_info "Installing Volcano via Helm..."
 helm install volcano "${VOLCANO_ROOT}/installer/helm/chart/volcano" \
