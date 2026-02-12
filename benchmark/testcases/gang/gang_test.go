@@ -19,13 +19,22 @@ import (
 
 // VCJobConfig defines the configuration for a single VCJob.
 type VCJobConfig struct {
-	Name         string
-	Count        int    // number of VCJobs to create
+	Name         string // base name for the VCJob (index will be appended automatically)
 	Replicas     int32  // pods per job
 	MinAvailable int32  // gang scheduling minAvailable
 	CPU          string // cpu request per pod
 	Memory       string // memory request per pod
 	Queue        string // volcano queue name
+}
+
+// RepeatConfig generates n copies of the given VCJobConfig.
+// Use this to express "N identical VCJobs" without embedding count in the config.
+func RepeatConfig(cfg VCJobConfig, n int) []VCJobConfig {
+	configs := make([]VCJobConfig, n)
+	for i := range configs {
+		configs[i] = cfg
+	}
+	return configs
 }
 
 func TestMain(m *testing.M) {
@@ -79,10 +88,11 @@ func BuildVCJob(cfg VCJobConfig, index uint64) (*unstructured.Unstructured, erro
 	return obj, nil
 }
 
-// CreateGangJobs creates multiple VCJobs and returns the submission timestamp.
-func CreateGangJobs(ctx context.Context, cfg VCJobConfig) (time.Time, error) {
+// CreateGangJobs creates VCJobs from a list of configs and returns the submission timestamp.
+// Each VCJobConfig corresponds to exactly one VCJob.
+func CreateGangJobs(ctx context.Context, configs []VCJobConfig) (time.Time, error) {
 	submitTime := time.Now()
-	for i := 0; i < cfg.Count; i++ {
+	for i, cfg := range configs {
 		obj, err := BuildVCJob(cfg, benchpkg.Index())
 		if err != nil {
 			return submitTime, fmt.Errorf("building vcjob %d: %w", i, err)
@@ -95,6 +105,7 @@ func CreateGangJobs(ctx context.Context, cfg VCJobConfig) (time.Time, error) {
 }
 
 // RunGangTest is the common test runner for gang scheduling benchmarks.
+// Each element in configs represents a single VCJob to create.
 func RunGangTest(t *testing.T, configs []VCJobConfig) {
 	ctx := context.Background()
 
@@ -108,27 +119,20 @@ func RunGangTest(t *testing.T, configs []VCJobConfig) {
 
 	totalPods := 0
 	for _, cfg := range configs {
-		totalPods += cfg.Count * int(cfg.Replicas)
+		totalPods += int(cfg.Replicas)
 	}
 
-	t.Logf("Starting gang scheduling test: total %d pods", totalPods)
+	t.Logf("Starting gang scheduling test: %d VCJobs, %d total pods", len(configs), totalPods)
 
-	var firstSubmitTime time.Time
-	for i, cfg := range configs {
-		submitTime, err := CreateGangJobs(ctx, cfg)
-		if err != nil {
-			t.Fatalf("Failed to create gang jobs for config %d: %v", i, err)
-		}
-		if i == 0 {
-			firstSubmitTime = submitTime
-		}
-		t.Logf("Created %d VCJobs (%s): %d pods/job, minAvailable=%d",
-			cfg.Count, cfg.Name, cfg.Replicas, cfg.MinAvailable)
+	submitTime, err := CreateGangJobs(ctx, configs)
+	if err != nil {
+		t.Fatalf("Failed to create gang jobs: %v", err)
 	}
+	t.Logf("Submitted %d VCJobs", len(configs))
 
 	// Wait for all pods to be scheduled
 	t.Log("Waiting for all pods to be scheduled...")
-	err := benchpkg.WaitForPodsScheduled(ctx, "default", "volcano.sh/job-name", totalPods, 10*time.Minute)
+	err = benchpkg.WaitForPodsScheduled(ctx, "default", "volcano.sh/job-name", totalPods, 10*time.Minute)
 	if err != nil {
 		t.Fatalf("Pods scheduling timeout: %v", err)
 	}
@@ -136,7 +140,7 @@ func RunGangTest(t *testing.T, configs []VCJobConfig) {
 	// Measure pod creation latency
 	latency, err := benchpkg.MeasurePodsCreationLatency(
 		ctx, "default", "volcano.sh/job-name", totalPods,
-		firstSubmitTime, 10*time.Minute,
+		submitTime, 10*time.Minute,
 	)
 	if err != nil {
 		t.Fatalf("Failed to measure pod creation latency: %v", err)
@@ -150,7 +154,7 @@ func RunGangTest(t *testing.T, configs []VCJobConfig) {
 	}
 
 	t.Logf("=== Results ===")
-	t.Logf("Total pods: %d", totalPods)
+	t.Logf("Total VCJobs: %d, Total pods: %d", len(configs), totalPods)
 	t.Logf("Pod creation latency (vcjob submit -> all pods created): %v", latency)
 	t.Logf("Throughput: %.1f pods/sec", float64(totalPods)/latency.Seconds())
 
@@ -181,15 +185,12 @@ func TestFromCLI(t *testing.T) {
 	t.Logf("CLI params: jobs=%d, pods=%d, cpu=%s, memory=%s, minAvailable=%d, queue=%s",
 		params.Jobs, params.Pods, params.CPU, params.Memory, params.MinAvailable, params.Queue)
 
-	RunGangTest(t, []VCJobConfig{
-		{
-			Name:         fmt.Sprintf("gang-%dx%d", params.Jobs, params.Pods),
-			Count:        params.Jobs,
-			Replicas:     int32(params.Pods),
-			MinAvailable: int32(params.MinAvailable),
-			CPU:          params.CPU,
-			Memory:       params.Memory,
-			Queue:        params.Queue,
-		},
-	})
+	RunGangTest(t, RepeatConfig(VCJobConfig{
+		Name:         fmt.Sprintf("gang-%dx%d", params.Jobs, params.Pods),
+		Replicas:     int32(params.Pods),
+		MinAvailable: int32(params.MinAvailable),
+		CPU:          params.CPU,
+		Memory:       params.Memory,
+		Queue:        params.Queue,
+	}, params.Jobs))
 }
