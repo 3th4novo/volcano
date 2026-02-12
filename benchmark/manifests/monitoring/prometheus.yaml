@@ -66,6 +66,11 @@ data:
       - job_name: 'kube-state-metrics'
         static_configs:
           - targets: ['kube-state-metrics.monitoring.svc:8080']
+
+      - job_name: 'benchmark'
+        static_configs:
+          - targets: ['host.docker.internal:9090']
+        scrape_interval: 1s
 ---
 apiVersion: apps/v1
 kind: Deployment

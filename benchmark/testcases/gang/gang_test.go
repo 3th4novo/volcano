@@ -139,7 +139,14 @@ func RunGangTest(t *testing.T, configs []VCJobConfig) {
 		firstSubmitTime, 10*time.Minute,
 	)
 	if err != nil {
-		t.Fatalf("Failed to measure latency: %v", err)
+		t.Fatalf("Failed to measure pod creation latency: %v", err)
+	}
+
+	// Measure per-pod scheduling latency (pod creation -> node binding)
+	if err := benchpkg.MeasureSchedulingLatency(
+		ctx, "default", "volcano.sh/job-name", totalPods, 10*time.Minute,
+	); err != nil {
+		t.Fatalf("Failed to measure scheduling latency: %v", err)
 	}
 
 	t.Logf("=== Results ===")

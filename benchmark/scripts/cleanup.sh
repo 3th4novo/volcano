@@ -35,6 +35,7 @@ kubectl delete node -l type=kwok --ignore-not-found=true 2>/dev/null || true
 
 log_info "Cleaning up monitoring components..."
 kubectl delete -f "${BENCHMARK_DIR}/manifests/monitoring/grafana.yaml" --ignore-not-found=true 2>/dev/null || true
+kubectl delete configmap grafana-dashboards -n monitoring --ignore-not-found=true 2>/dev/null || true
 kubectl delete -f "${BENCHMARK_DIR}/manifests/monitoring/prometheus.yaml" --ignore-not-found=true 2>/dev/null || true
 
 log_info "Cleaning up Volcano scheduler config..."

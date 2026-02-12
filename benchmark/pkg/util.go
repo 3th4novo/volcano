@@ -35,6 +35,7 @@ func Index() uint64 {
 }
 
 // InitTestMain initializes the test environment with kubeconfig and REST client.
+// It also starts a Prometheus metrics HTTP server on :9090.
 func InitTestMain(m *testing.M) {
 	var err error
 	path := conf.ResolveKubeConfigFile()
@@ -51,6 +52,9 @@ func InitTestMain(m *testing.M) {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+
+	StartMetricsServer(":9090")
+
 	os.Exit(TestEnv.Run(m))
 }
 
@@ -79,8 +83,10 @@ func WaitForPodsScheduled(ctx context.Context, namespace, labelSelector string, 
 	)
 }
 
-// MeasurePodsCreationLatency measures the time from vcjob submission to all
-// expected pods being created and scheduled. It returns the duration.
+// MeasurePodsCreationLatency measures the wall-clock time from VCJob submission
+// (submitTime, captured via time.Now() before creating VCJobs) to all expected
+// pods existing in the API server. It returns the duration and records it to
+// the benchmark_pods_creation_latency_milliseconds Prometheus gauge.
 func MeasurePodsCreationLatency(ctx context.Context, namespace, labelSelector string, expectedCount int, submitTime time.Time, timeout time.Duration) (time.Duration, error) {
 	err := wait.For(func(ctx context.Context) (bool, error) {
 		var pods corev1.PodList
@@ -90,14 +96,7 @@ func MeasurePodsCreationLatency(ctx context.Context, namespace, labelSelector st
 		if err != nil {
 			return false, err
 		}
-		ready := 0
-		for i := range pods.Items {
-			phase := pods.Items[i].Status.Phase
-			if phase == corev1.PodRunning || phase == corev1.PodSucceeded {
-				ready++
-			}
-		}
-		return ready >= expectedCount, nil
+		return len(pods.Items) >= expectedCount, nil
 	},
 		wait.WithContext(ctx),
 		wait.WithInterval(500*time.Millisecond),
@@ -106,7 +105,35 @@ func MeasurePodsCreationLatency(ctx context.Context, namespace, labelSelector st
 	if err != nil {
 		return 0, fmt.Errorf("waiting for pods creation: %w", err)
 	}
-	return time.Since(submitTime), nil
+	latency := time.Since(submitTime)
+	PodsCreationLatency.Set(float64(latency.Milliseconds()))
+	return latency, nil
+}
+
+// MeasureSchedulingLatency waits for all expected pods to be scheduled (bound
+// to a node), then records per-pod end-to-end scheduling latency (wall-clock
+// time.Now() minus pod.CreationTimestamp) into the
+// benchmark_e2e_scheduling_latency_milliseconds Prometheus histogram.
+func MeasureSchedulingLatency(ctx context.Context, namespace, labelSelector string, expectedCount int, timeout time.Duration) error {
+	if err := WaitForPodsScheduled(ctx, namespace, labelSelector, expectedCount, timeout); err != nil {
+		return fmt.Errorf("waiting for pods scheduled: %w", err)
+	}
+
+	var pods corev1.PodList
+	if err := Resources.WithNamespace(namespace).List(ctx, &pods,
+		resources.WithLabelSelector(labelSelector),
+	); err != nil {
+		return fmt.Errorf("listing pods for scheduling latency: %w", err)
+	}
+
+	now := time.Now()
+	for i := range pods.Items {
+		if pods.Items[i].Spec.NodeName != "" {
+			latency := now.Sub(pods.Items[i].CreationTimestamp.Time)
+			E2eSchedulingLatency.Observe(float64(latency.Milliseconds()))
+		}
+	}
+	return nil
 }
 
 // WaitForDeployment waits for a deployment to become available.

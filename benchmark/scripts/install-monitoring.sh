@@ -7,6 +7,11 @@ require_cmd kubectl
 log_info "Deploying Prometheus + kube-state-metrics..."
 kubectl apply -f "${BENCHMARK_DIR}/manifests/monitoring/prometheus.yaml"
 
+log_info "Creating Grafana dashboard ConfigMap from grafana-dashboard.json..."
+kubectl create configmap grafana-dashboards \
+    --from-file=volcano-benchmark.json="${BENCHMARK_DIR}/manifests/monitoring/grafana-dashboard.json" \
+    -n monitoring --dry-run=client -o yaml | kubectl apply -f -
+
 log_info "Deploying Grafana..."
 kubectl apply -f "${BENCHMARK_DIR}/manifests/monitoring/grafana.yaml"
 
