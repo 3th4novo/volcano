@@ -204,3 +204,27 @@ func RunGangTest(t *testing.T, configs []VCJobConfig) {
 	}
 	t.Logf("Verified: %d volcano pods found", count)
 }
+
+// TestFromCLI runs a gang scheduling test using parameters from environment variables.
+// This is used by run-tests.sh in CLI params mode (JOBS, PODS, CPU, MEMORY, etc.).
+func TestFromCLI(t *testing.T) {
+	params := benchpkg.GetCLITestParams()
+	if params == nil {
+		t.Skip("Skipping: BENCHMARK_JOBS not set (not in CLI params mode)")
+	}
+
+	t.Logf("CLI params: jobs=%d, pods=%d, cpu=%s, memory=%s, minAvailable=%d, queue=%s",
+		params.Jobs, params.Pods, params.CPU, params.Memory, params.MinAvailable, params.Queue)
+
+	RunGangTest(t, []VCJobConfig{
+		{
+			Name:         fmt.Sprintf("gang-%dx%d", params.Jobs, params.Pods),
+			Count:        params.Jobs,
+			Replicas:     int32(params.Pods),
+			MinAvailable: int32(params.MinAvailable),
+			CPU:          params.CPU,
+			Memory:       params.Memory,
+			Queue:        params.Queue,
+		},
+	})
+}

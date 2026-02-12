@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # create-kwok-nodes.sh — Create KWOK simulated nodes
+# Reads KWOK Stage configs from the scenario's manifests directory.
 
 source "$(dirname "$0")/common.sh"
 require_cmd kubectl
@@ -11,10 +12,10 @@ kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KW
 log_info "Waiting for KWOK controller to be ready..."
 kubectl wait --for=condition=Available deployment/kwok-controller -n kube-system --timeout=120s
 
-log_info "Applying KWOK Stage configurations..."
-kubectl apply -f "${BENCHMARK_DIR}/manifests/kwok/node-heartbeat.yaml"
-kubectl apply -f "${BENCHMARK_DIR}/manifests/kwok/pod-complete.yaml"
-kubectl apply -f "${BENCHMARK_DIR}/manifests/kwok/pod-delete.yaml"
+log_info "Applying KWOK Stage configurations from ${SCENARIO_DIR}..."
+kubectl apply -f "${SCENARIO_DIR}/node-heartbeat.yaml"
+kubectl apply -f "${SCENARIO_DIR}/pod-complete.yaml"
+kubectl apply -f "${SCENARIO_DIR}/pod-delete.yaml"
 
 log_info "Creating ${KWOK_NODE_COUNT} KWOK simulated nodes (${CPU_PER_NODE} CPU, ${MEMORY_PER_NODE} Memory)..."
 for i in $(seq 0 $((KWOK_NODE_COUNT - 1))); do

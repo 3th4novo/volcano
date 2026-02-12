@@ -3,6 +3,8 @@
 # Usage:
 #   ./scripts/cleanup.sh                   # Clean up resources only, keep the cluster
 #   ./scripts/cleanup.sh --delete-cluster   # Clean up resources and delete the cluster
+#
+# Cleanup does NOT require SCENARIO — it removes all benchmark resources regardless of scenario.
 
 source "$(dirname "$0")/common.sh"
 require_cmd kubectl
@@ -17,16 +19,16 @@ done
 # --- Clean up K8s resources ---
 
 log_info "Cleaning up test VCJobs..."
-kubectl delete jobs.batch.volcano.sh --all -n default --ignore-not-found=true 2>/dev/null || true
+kubectl delete jobs.batch.volcano.sh --all -n default --ignore-not-found=true --grace-period=0 --force 2>/dev/null || true
 
 log_info "Cleaning up pods created by VCJobs..."
-kubectl delete pods -l volcano.sh/job-name -n default --ignore-not-found=true 2>/dev/null || true
+kubectl delete pods -l volcano.sh/job-name -n default --ignore-not-found=true --grace-period=0 --force 2>/dev/null || true
 
 log_info "Cleaning up PodGroups..."
-kubectl delete podgroups.scheduling.volcano.sh --all -n default --ignore-not-found=true 2>/dev/null || true
+kubectl delete podgroups.scheduling.volcano.sh --all -n default --ignore-not-found=true --grace-period=0 --force 2>/dev/null || true
 
 log_info "Cleaning up KWOK Stages..."
-kubectl delete -f "${BENCHMARK_DIR}/manifests/kwok/" --ignore-not-found=true 2>/dev/null || true
+kubectl delete stages.kwok.x-k8s.io --all --ignore-not-found=true 2>/dev/null || true
 
 log_info "Cleaning up KWOK simulated nodes..."
 kubectl delete node -l type=kwok --ignore-not-found=true 2>/dev/null || true
@@ -36,10 +38,10 @@ kubectl delete -f "${BENCHMARK_DIR}/manifests/monitoring/grafana.yaml" --ignore-
 kubectl delete -f "${BENCHMARK_DIR}/manifests/monitoring/prometheus.yaml" --ignore-not-found=true 2>/dev/null || true
 
 log_info "Cleaning up Volcano scheduler config..."
-kubectl delete -f "${BENCHMARK_DIR}/manifests/volcano/scheduler-config.yaml" --ignore-not-found=true 2>/dev/null || true
+kubectl delete configmap volcano-scheduler-configmap -n volcano-system --ignore-not-found=true 2>/dev/null || true
 
-log_info "Cleaning up test queue..."
-kubectl delete -f "${BENCHMARK_DIR}/manifests/volcano/queue.yaml" --ignore-not-found=true 2>/dev/null || true
+log_info "Cleaning up test queues..."
+kubectl delete queues.scheduling.volcano.sh --all --ignore-not-found=true 2>/dev/null || true
 
 log_info "Cleaning up Volcano..."
 helm uninstall volcano -n volcano-system 2>/dev/null || true

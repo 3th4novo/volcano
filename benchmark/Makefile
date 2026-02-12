@@ -1,10 +1,16 @@
 CLUSTER_NAME ?= volcano-benchmark
+SCENARIO ?= gang
 KWOK_NODE_COUNT ?= 100
-TEST_CASE ?= gang
+CPU_PER_NODE ?= 32
+MEMORY_PER_NODE ?= 256Gi
 VOLCANO_VERSION ?=
+TEST_CASE ?= $(SCENARIO)
 
 export CLUSTER_NAME
+export SCENARIO
 export KWOK_NODE_COUNT
+export CPU_PER_NODE
+export MEMORY_PER_NODE
 
 # Full test workflow
 .PHONY: all
@@ -46,9 +52,17 @@ endif
 install-monitoring:
 	bash scripts/install-monitoring.sh
 
+# Run predefined test cases
 .PHONY: test
 test:
 	bash scripts/run-tests.sh $(TEST_CASE)
+
+# Run ad-hoc CLI test (requires JOBS and PODS env vars)
+# Example: make test-cli SCENARIO=gang JOBS=10 PODS=100
+.PHONY: test-cli
+test-cli:
+	JOBS=$(JOBS) PODS=$(PODS) CPU=$(CPU) MEMORY=$(MEMORY) \
+		bash scripts/run-tests.sh
 
 .PHONY: report
 report:
@@ -66,15 +80,15 @@ cleanup:
 cleanup-all:
 	bash scripts/cleanup.sh --delete-cluster
 
-# Shortcut targets
+# Shortcut targets for predefined test cases
 .PHONY: test-gang-20x50
 test-gang-20x50:
-	bash scripts/run-tests.sh gang/case_20x50
+	SCENARIO=gang bash scripts/run-tests.sh gang/case_20x50
 
 .PHONY: test-gang-10x100
 test-gang-10x100:
-	bash scripts/run-tests.sh gang/case_10x100
+	SCENARIO=gang bash scripts/run-tests.sh gang/case_10x100
 
 .PHONY: test-all-gang
 test-all-gang:
-	bash scripts/run-tests.sh gang
+	SCENARIO=gang bash scripts/run-tests.sh gang

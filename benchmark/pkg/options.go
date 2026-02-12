@@ -19,6 +19,40 @@ type Options struct {
 	Gang                bool
 }
 
+// CLITestParams holds parameters for ad-hoc CLI-driven test runs.
+type CLITestParams struct {
+	Jobs         int
+	Pods         int
+	CPU          string
+	Memory       string
+	MinAvailable int
+	Queue        string
+	Scenario     string
+	ScenarioDir  string
+}
+
+// GetCLITestParams reads test parameters from BENCHMARK_* environment variables.
+// Returns nil if BENCHMARK_JOBS is not set (i.e., not in CLI params mode).
+func GetCLITestParams() *CLITestParams {
+	jobs := getEnv("BENCHMARK_JOBS", "")
+	if jobs == "" {
+		return nil
+	}
+	pods := getEnvInt("BENCHMARK_PODS", 0)
+	minAvail := getEnvInt("BENCHMARK_MIN_AVAILABLE", pods)
+
+	return &CLITestParams{
+		Jobs:         getEnvInt("BENCHMARK_JOBS", 0),
+		Pods:         pods,
+		CPU:          getEnv("BENCHMARK_CPU", "1"),
+		Memory:       getEnv("BENCHMARK_MEMORY", "1Gi"),
+		MinAvailable: minAvail,
+		Queue:        getEnv("BENCHMARK_QUEUE", "benchmark-queue"),
+		Scenario:     getEnv("BENCHMARK_SCENARIO", "default"),
+		ScenarioDir:  getEnv("BENCHMARK_SCENARIO_DIR", ""),
+	}
+}
+
 // AddFlags registers options from environment variables and command-line flags.
 func (o *Options) AddFlags() {
 	flag.IntVar(&o.NodeSize, "nodes-size", getEnvInt("NODES_SIZE", 100), "Number of KWOK nodes")
