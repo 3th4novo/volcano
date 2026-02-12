@@ -16,7 +16,7 @@ export MEMORY_PER_NODE
 .PHONY: all
 all: setup test report
 
-# Environment setup
+# Environment setup - if volcano version specified, install the corresponding volcano version
 .PHONY: setup
 ifdef VOLCANO_VERSION
 setup: create-cluster create-nodes install-volcano install-monitoring
@@ -52,25 +52,13 @@ endif
 install-monitoring:
 	bash scripts/install-monitoring.sh
 
-# Run predefined test cases
-.PHONY: test
-test:
-	bash scripts/run-tests.sh $(TEST_CASE)
-
-# Run ad-hoc CLI test (requires JOBS and PODS env vars)
-# Example: make test-cli SCENARIO=gang JOBS=10 PODS=100
-.PHONY: test-cli
-test-cli:
-	JOBS=$(JOBS) PODS=$(PODS) CPU=$(CPU) MEMORY=$(MEMORY) \
-		bash scripts/run-tests.sh
+.PHONY: export-charts
+export-charts:
+	bash scripts/export-grafana-charts.sh
 
 .PHONY: report
 report:
 	bash scripts/collect-report.sh
-
-.PHONY: export-charts
-export-charts:
-	bash scripts/export-grafana-charts.sh
 
 .PHONY: cleanup
 cleanup:
@@ -80,6 +68,17 @@ cleanup:
 cleanup-all:
 	bash scripts/cleanup.sh --delete-cluster
 
+# Run predefined test cases
+.PHONY: test
+test:
+	bash scripts/run-tests.sh $(TEST_CASE)
+
+# Run ad-hoc CLI test
+# Example: make test-cli SCENARIO=gang JOBS=10 PODS=100
+.PHONY: test-cli
+test-cli:
+	bash scripts/run-tests.sh $(SCENARIO) --jobs=$(JOBS) --pods=$(PODS) $(if $(CPU),--cpu=$(CPU)) $(if $(MEMORY),--memory=$(MEMORY))
+
 # Shortcut targets for predefined test cases
 .PHONY: test-gang-20x50
 test-gang-20x50:
@@ -88,7 +87,3 @@ test-gang-20x50:
 .PHONY: test-gang-10x100
 test-gang-10x100:
 	SCENARIO=gang bash scripts/run-tests.sh gang/case_10x100
-
-.PHONY: test-all-gang
-test-all-gang:
-	SCENARIO=gang bash scripts/run-tests.sh gang

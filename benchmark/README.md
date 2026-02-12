@@ -12,7 +12,7 @@ make all SCENARIO=gang
 # Full workflow (release version)
 make all SCENARIO=gang VOLCANO_VERSION=v1.10.0
 
-# Run a specific predefined test case
+# Run a specific predefined test case under gang scheduling
 make test-gang-20x50    # 20 jobs × 50 pods/job
 make test-gang-10x100   # 10 jobs × 100 pods/job
 
@@ -20,51 +20,8 @@ make test-gang-10x100   # 10 jobs × 100 pods/job
 make test-cli SCENARIO=gang JOBS=5 PODS=200 CPU=2 MEMORY=2Gi
 
 # Cleanup
-make cleanup            # Keep the cluster
-make cleanup-all        # Delete the cluster
-```
-
-## Directory Structure
-
-```
-benchmark/
-├── Makefile                          # Main entry point
-├── config/                           # Kind cluster configuration
-├── manifests/
-│   └── monitoring/                   # Prometheus + Grafana
-├── scripts/                          # Bash scripts
-│   ├── common.sh                     # Shared variables (SCENARIO, SCENARIO_DIR)
-│   ├── create-cluster.sh
-│   ├── create-kwok-nodes.sh
-│   ├── install-volcano.sh
-│   ├── run-tests.sh
-│   ├── cleanup.sh
-│   └── ...
-├── pkg/                              # Go shared library
-├── testcases/
-│   ├── default/                      # Default scenario (no gang scheduling)
-│   │   └── manifests/
-│   │       ├── kwok/                 # KWOK Stages
-│   │       │   ├── node-heartbeat.yaml
-│   │       │   ├── pod-complete.yaml
-│   │       │   └── pod-delete.yaml
-│   │       └── volcano/              # Volcano configs
-│   │           ├── scheduler-config.yaml
-│   │           └── queue.yaml
-│   └── gang/                         # Gang scheduling scenario
-│       ├── manifests/
-│       │   ├── kwok/                 # KWOK Stages
-│       │   │   ├── node-heartbeat.yaml
-│       │   │   ├── pod-complete.yaml
-│       │   │   └── pod-delete.yaml
-│       │   └── volcano/              # Volcano configs
-│       │       ├── scheduler-config.yaml  # Gang plugin enabled
-│       │       ├── queue.yaml
-│       │       └── vcjob-template.yaml    # VCJob YAML template
-│       ├── gang_test.go              # TestFromCLI + shared test logic
-│       ├── case_20x50_test.go        # Predefined: 20 jobs × 50 pods
-│       └── case_10x100_test.go       # Predefined: 10 jobs × 100 pods
-└── results/                          # Test results (git ignored)
+make cleanup            # Delete all resources except the kind cluster
+make cleanup-all        # Delete all resources including the kind cluster
 ```
 
 ## Scenario-Based Architecture
@@ -79,10 +36,10 @@ The `SCENARIO` environment variable (default: `gang`) determines which scenario'
 
 ### Available Scenarios
 
-| Scenario | Description | Gang Plugin |
-|----------|-------------|-------------|
-| `default` | Baseline — no gang scheduling | Disabled |
-| `gang` | Gang scheduling with VCJobs | Enabled |
+| Scenario | Description                  | Gang Plugin |
+|----------|------------------------------|-------------|
+| `default` | Baseline — default configmap | Disabled |
+| `gang` | Gang scheduling   | Enabled |
 
 ## Two Test Execution Modes
 
@@ -309,14 +266,6 @@ Cleanup does not require a `SCENARIO` parameter — it removes all VCJobs, pods,
    - Any job templates needed (e.g. `vcjob-template.yaml`)
 2. Create `testcases/<scenario>/*_test.go` files with test logic
 3. Run: `make setup SCENARIO=<scenario> && make test SCENARIO=<scenario>`
-
-## Troubleshooting
-
-- **Kind cluster creation fails**: Ensure Docker is running and has sufficient resources (at least 4 CPU, 8GB RAM recommended).
-- **KWOK nodes not becoming Ready**: Check KWOK controller logs: `kubectl logs -n kube-system deployment/kwok-controller`.
-- **Volcano pods CrashLoopBackOff**: Verify images were loaded correctly: `docker exec volcano-benchmark-control-plane crictl images | grep volcanosh`.
-- **Prometheus shows no data**: Wait 30 seconds after test completion for metrics to be scraped. Verify targets at http://localhost:30090/targets.
-- **Tests timeout**: Increase the timeout: `bash scripts/run-tests.sh gang` (default is 600s). Ensure enough KWOK nodes are available for the pod count.
 
 ## Dependencies
 
