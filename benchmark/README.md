@@ -5,9 +5,12 @@ A Kind + KWOK based performance benchmark framework for the Volcano scheduler.
 ## Quick Start
 
 ```bash
-# Full workflow: create cluster -> build images -> install components -> run tests -> collect report
+# Full workflow (local source): create cluster -> build images -> install -> run tests -> report
 cd benchmark
 make all
+
+# Full workflow (release version): skip image build, install from Helm repo
+make all VOLCANO_VERSION=v1.10.0
 
 # Run a specific test case
 make test-gang-20x50    # 20 jobs × 50 pods/job
@@ -96,21 +99,33 @@ By default, 100 KWOK nodes are created, each with 32 CPU and 256Gi memory. Custo
 KWOK_NODE_COUNT=200 CPU_PER_NODE=64 MEMORY_PER_NODE=512Gi make create-nodes
 ```
 
-### Step 3: Build Volcano Images
+### Step 3: Build Volcano Images (local mode only)
 
 ```bash
 make build-images
 ```
 
-This runs `make images` in the Volcano root directory and loads the resulting images into the Kind cluster.
+This runs `make images` in the Volcano root directory and loads the resulting images into the Kind cluster. This step is automatically skipped when using `VOLCANO_VERSION`.
 
 ### Step 4: Install Volcano
+
+**Option A — Local source (default):**
 
 ```bash
 make install-volcano
 ```
 
-Installs Volcano via Helm with the gang scheduling plugin enabled, creates the benchmark queue, and restarts the scheduler to pick up the configuration.
+Installs Volcano from the local Helm chart at `installer/helm/chart/volcano`.
+
+**Option B — Specific release version:**
+
+```bash
+make install-volcano VOLCANO_VERSION=v1.10.0
+```
+
+Downloads and installs the specified version from the official Volcano Helm repository (`https://volcano-sh.github.io/volcano`). No local image build is needed.
+
+Both options apply the gang scheduling plugin config, create the benchmark queue, and restart the scheduler.
 
 ### Step 5: Install Monitoring
 
@@ -187,6 +202,7 @@ Key environment variables (set before running `make` or export in your shell):
 | `MEMORY_PER_NODE` | `256Gi` | Memory capacity per KWOK node |
 | `KWOK_VERSION` | `v0.7.0` | KWOK release version |
 | `TEST_CASE` | `gang` | Test case to run (used by `make test`) |
+| `VOLCANO_VERSION` | _(empty)_ | Set to a release tag (e.g. `v1.10.0`) to install from Helm repo instead of local source |
 
 ### Troubleshooting
 

@@ -1,6 +1,7 @@
 CLUSTER_NAME ?= volcano-benchmark
 KWOK_NODE_COUNT ?= 100
 TEST_CASE ?= gang
+VOLCANO_VERSION ?=
 
 export CLUSTER_NAME
 export KWOK_NODE_COUNT
@@ -11,7 +12,11 @@ all: setup test report
 
 # Environment setup
 .PHONY: setup
+ifdef VOLCANO_VERSION
+setup: create-cluster create-nodes install-volcano install-monitoring
+else
 setup: create-cluster create-nodes build-images install-volcano install-monitoring
+endif
 
 .PHONY: create-cluster
 create-cluster:
@@ -23,11 +28,19 @@ create-nodes:
 
 .PHONY: build-images
 build-images:
+ifdef VOLCANO_VERSION
+	@echo "Skipping image build (using release version $(VOLCANO_VERSION))"
+else
 	bash scripts/build-images.sh
+endif
 
 .PHONY: install-volcano
 install-volcano:
-	bash scripts/install-volcano.sh
+ifdef VOLCANO_VERSION
+	bash scripts/install-volcano.sh --release $(VOLCANO_VERSION)
+else
+	bash scripts/install-volcano.sh --local
+endif
 
 .PHONY: install-monitoring
 install-monitoring:

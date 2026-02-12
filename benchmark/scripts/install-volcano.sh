@@ -1,30 +1,79 @@
 #!/usr/bin/env bash
 # install-volcano.sh — Install Volcano
+#
+# Usage:
+#   ./scripts/install-volcano.sh                    # Default: install from local source
+#   ./scripts/install-volcano.sh --local             # Explicitly install from local source
+#   ./scripts/install-volcano.sh --release v1.10.0   # Install a specific release version
 
 source "$(dirname "$0")/common.sh"
 require_cmd kubectl helm
 
-# Clean up any pre-existing Volcano CRDs that lack Helm ownership labels.
-# This prevents "invalid ownership metadata" errors during helm install.
-log_info "Cleaning up any pre-existing Volcano CRDs..."
-kubectl get crd -o name 2>/dev/null | grep 'volcano\.sh' | while read -r crd; do
-    log_info "  Deleting $crd"
-    kubectl delete "$crd" --ignore-not-found
+# --- Parse arguments ---
+INSTALL_MODE="local"
+VOLCANO_VERSION=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --local)
+            INSTALL_MODE="local"
+            shift
+            ;;
+        --release)
+            INSTALL_MODE="release"
+            VOLCANO_VERSION="${2:?ERROR: --release requires a version argument (e.g. v1.10.0)}"
+            shift 2
+            ;;
+        *)
+            log_error "Unknown argument: $1"
+            exit 1
+            ;;
+    esac
 done
 
-# Also uninstall any previous Helm release to ensure a clean state
+# --- Clean up any pre-existing Volcano installation ---
+
+log_info "Cleaning up any pre-existing Volcano CRDs..."
+VOLCANO_CRDS=$(kubectl get crd -o name 2>/dev/null | grep 'volcano\.sh' || true)
+if [[ -n "${VOLCANO_CRDS}" ]]; then
+    echo "${VOLCANO_CRDS}" | while read -r crd; do
+        log_info "  Deleting $crd"
+        kubectl delete "$crd" --ignore-not-found
+    done
+fi
+
 if helm status volcano -n volcano-system &>/dev/null; then
     log_info "Removing previous Volcano Helm release..."
     helm uninstall volcano -n volcano-system --wait
 fi
 
-log_info "Installing Volcano via Helm..."
-helm install volcano "${VOLCANO_ROOT}/installer/helm/chart/volcano" \
-    --namespace volcano-system \
-    --create-namespace \
-    --set basic.scheduler_config_file=volcano-scheduler-configmap \
-    --set basic.image_pull_policy=IfNotPresent \
-    --wait --timeout 120s
+# --- Install Volcano ---
+
+if [[ "${INSTALL_MODE}" == "release" ]]; then
+    log_info "Installing Volcano release ${VOLCANO_VERSION} from official Helm repo..."
+
+    helm repo add volcano-sh https://volcano-sh.github.io/volcano 2>/dev/null || true
+    helm repo update volcano-sh
+
+    helm install volcano volcano-sh/volcano \
+        --version "${VOLCANO_VERSION}" \
+        --namespace volcano-system \
+        --create-namespace \
+        --set basic.scheduler_config_file=volcano-scheduler-configmap \
+        --set basic.image_pull_policy=IfNotPresent \
+        --wait --timeout 180s
+else
+    log_info "Installing Volcano from local source..."
+
+    helm install volcano "${VOLCANO_ROOT}/installer/helm/chart/volcano" \
+        --namespace volcano-system \
+        --create-namespace \
+        --set basic.scheduler_config_file=volcano-scheduler-configmap \
+        --set basic.image_pull_policy=IfNotPresent \
+        --wait --timeout 120s
+fi
+
+# --- Post-install configuration (common to both modes) ---
 
 log_info "Applying scheduler configuration (enabling gang plugin)..."
 kubectl apply -f "${BENCHMARK_DIR}/manifests/volcano/scheduler-config.yaml"
@@ -36,5 +85,5 @@ kubectl rollout status deployment/volcano-scheduler -n volcano-system --timeout=
 log_info "Creating test queue..."
 kubectl apply -f "${BENCHMARK_DIR}/manifests/volcano/queue.yaml"
 
-log_info "Volcano installation complete"
+log_info "Volcano installation complete (mode=${INSTALL_MODE})"
 kubectl get pods -n volcano-system
