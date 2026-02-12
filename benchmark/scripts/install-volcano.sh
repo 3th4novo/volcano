@@ -77,15 +77,15 @@ fi
 
 # --- Post-install configuration (reads from scenario directory) ---
 
-log_info "Applying scheduler configuration from ${SCENARIO_DIR}/scheduler-config.yaml..."
-kubectl apply -f "${SCENARIO_DIR}/scheduler-config.yaml"
+log_info "Applying scheduler configuration from ${SCENARIO_DIR}/manifests/volcano/scheduler-config.yaml..."
+kubectl apply -f "${SCENARIO_DIR}/manifests/volcano/scheduler-config.yaml"
 
 log_info "Restarting volcano-scheduler to load new configuration..."
 kubectl rollout restart deployment/volcano-scheduler -n volcano-system
 kubectl rollout status deployment/volcano-scheduler -n volcano-system --timeout=120s
 
-log_info "Creating test queue from ${SCENARIO_DIR}/queue.yaml..."
-kubectl apply -f "${SCENARIO_DIR}/queue.yaml"
+log_info "Creating test queue from ${SCENARIO_DIR}/manifests/volcano/queue.yaml..."
+kubectl apply -f "${SCENARIO_DIR}/manifests/volcano/queue.yaml"
 
 log_info "Volcano installation complete (mode=${INSTALL_MODE}, scenario=${SCENARIO})"
 kubectl get pods -n volcano-system

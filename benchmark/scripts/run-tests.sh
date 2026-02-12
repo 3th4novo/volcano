@@ -1,52 +1,130 @@
 #!/usr/bin/env bash
 # run-tests.sh — Run benchmark tests
 #
-# Two modes of operation:
+# Usage:
+#   ./scripts/run-tests.sh <scenario> [options]
+#   ./scripts/run-tests.sh <scenario>/<case>
 #
-# Mode 1: Run predefined Go test cases
-#   ./scripts/run-tests.sh gang              # Run all tests under the gang directory
-#   ./scripts/run-tests.sh gang/case_20x50   # Run a specific test case TestGang20x50
+# Examples:
+#   # Gang scheduling with CLI parameters
+#   ./scripts/run-tests.sh gang --jobs=20 --pods=50 --cpu=1 --memory=1Gi
 #
-# Mode 2: Run with CLI parameters (ad-hoc, no predefined test case needed)
-#   SCENARIO=gang JOBS=10 PODS=100 CPU=1 MEMORY=1Gi ./scripts/run-tests.sh
-#   The script passes these as env vars to the Go test binary which reads them via TestFromCLI.
+#   # Run predefined test case
+#   ./scripts/run-tests.sh gang/case_20x50
+#
+#   # Run all tests in a scenario
+#   ./scripts/run-tests.sh gang
+#
+# Gang scenario options:
+#   --jobs=N          Number of VCJobs to create
+#   --pods=N          Number of pods per job
+#   --cpu=N           CPU request per pod (default: 1)
+#   --memory=SIZE     Memory request per pod (default: 1Gi)
+#   --min-available=N Gang scheduling minAvailable (default: same as --pods)
+#   --queue=NAME      Volcano queue name (default: benchmark-queue)
 
 source "$(dirname "$0")/common.sh"
 require_cmd go
 
-# Check if CLI params mode (JOBS env var is set)
-JOBS="${JOBS:-}"
-PODS="${PODS:-}"
-CPU="${CPU:-1}"
-MEMORY="${MEMORY:-1Gi}"
-MIN_AVAILABLE="${MIN_AVAILABLE:-}"
-QUEUE="${QUEUE:-benchmark-queue}"
+# --- Parse arguments ---
+if [[ $# -lt 1 ]]; then
+    echo "Usage: $0 <scenario> [options]"
+    echo "       $0 <scenario>/<case>"
+    echo ""
+    echo "Examples:"
+    echo "  $0 gang --jobs=20 --pods=50"
+    echo "  $0 gang/case_20x50"
+    exit 1
+fi
 
-TEST_CASE="${1:-${SCENARIO}}"
-SCENE_DIR="${TEST_CASE%%/*}"
-TEST_FUNC=""
+FIRST_ARG="$1"
+shift
 
-# If JOBS is set, we're in CLI params mode — run TestFromCLI
-if [[ -n "${JOBS}" ]]; then
-    SCENE_DIR="${SCENARIO}"
-    TEST_FUNC="TestFromCLI"
-    # Default MIN_AVAILABLE to PODS if not set
-    MIN_AVAILABLE="${MIN_AVAILABLE:-${PODS}}"
-    log_info "CLI params mode: scenario=${SCENARIO}, jobs=${JOBS}, pods=${PODS}, cpu=${CPU}, memory=${MEMORY}, minAvailable=${MIN_AVAILABLE}, queue=${QUEUE}"
-elif [[ "${TEST_CASE}" == *"/"* ]]; then
-    # Predefined test case mode: extract test function name
-    CASE_NAME="${TEST_CASE##*/}"
+# Determine if it's a predefined case (contains /) or scenario with params
+if [[ "${FIRST_ARG}" == *"/"* ]]; then
+    # Predefined test case mode: gang/case_20x50
+    SCENE_DIR="${FIRST_ARG%%/*}"
+    CASE_NAME="${FIRST_ARG##*/}"
     # case_20x50 -> TestGang20x50
     TEST_FUNC="TestGang${CASE_NAME#case_}"
     TEST_FUNC=$(echo "${TEST_FUNC}" | sed 's/_//g' | sed 's/x/x/g')
+    CLI_MODE=false
+    log_info "Predefined case mode: scenario=${SCENE_DIR}, case=${CASE_NAME}, func=${TEST_FUNC}"
+else
+    # Scenario with optional CLI parameters
+    SCENE_DIR="${FIRST_ARG}"
+    CLI_MODE=false
+    TEST_FUNC=""
+    
+    # Default values
+    JOBS=""
+    PODS=""
+    CPU="1"
+    MEMORY="1Gi"
+    MIN_AVAILABLE=""
+    QUEUE="benchmark-queue"
+    
+    # Parse scenario-specific options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --jobs=*)
+                JOBS="${1#*=}"
+                CLI_MODE=true
+                shift
+                ;;
+            --pods=*)
+                PODS="${1#*=}"
+                shift
+                ;;
+            --cpu=*)
+                CPU="${1#*=}"
+                shift
+                ;;
+            --memory=*)
+                MEMORY="${1#*=}"
+                shift
+                ;;
+            --min-available=*)
+                MIN_AVAILABLE="${1#*=}"
+                shift
+                ;;
+            --queue=*)
+                QUEUE="${1#*=}"
+                shift
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                exit 1
+                ;;
+        esac
+    done
+    
+    if [[ "${CLI_MODE}" == "true" ]]; then
+        # Validate required params for CLI mode
+        if [[ -z "${JOBS}" || -z "${PODS}" ]]; then
+            log_error "CLI mode requires --jobs and --pods"
+            exit 1
+        fi
+        MIN_AVAILABLE="${MIN_AVAILABLE:-${PODS}}"
+        TEST_FUNC="TestFromCLI"
+        log_info "CLI params mode: scenario=${SCENE_DIR}, jobs=${JOBS}, pods=${PODS}, cpu=${CPU}, memory=${MEMORY}, minAvailable=${MIN_AVAILABLE}, queue=${QUEUE}"
+    else
+        log_info "Running all tests in scenario: ${SCENE_DIR}"
+    fi
 fi
 
+# Update SCENARIO_DIR based on parsed scenario
+export SCENARIO="${SCENE_DIR}"
+export SCENARIO_DIR="${BENCHMARK_DIR}/testcases/${SCENE_DIR}"
+
+# --- Compile test binary ---
 log_info "Compiling test binary: testcases/${SCENE_DIR}..."
 mkdir -p "${BENCHMARK_DIR}/bin"
 mkdir -p "${BENCHMARK_DIR}/results"
 cd "${VOLCANO_ROOT}"
 go test -c -o "${BENCHMARK_DIR}/bin/test-${SCENE_DIR}" "./benchmark/testcases/${SCENE_DIR}/..."
 
+# --- Run tests ---
 log_info "Running tests..."
 RUN_ARGS="-test.v -test.timeout 600s"
 if [[ -n "${TEST_FUNC}" ]]; then
@@ -56,15 +134,19 @@ fi
 
 # Export env vars for Go test binary to read
 export KUBECONFIG="${KUBECONFIG}"
-export BENCHMARK_JOBS="${JOBS}"
-export BENCHMARK_PODS="${PODS}"
-export BENCHMARK_CPU="${CPU}"
-export BENCHMARK_MEMORY="${MEMORY}"
-export BENCHMARK_MIN_AVAILABLE="${MIN_AVAILABLE}"
-export BENCHMARK_QUEUE="${QUEUE}"
 export BENCHMARK_SCENARIO="${SCENARIO}"
 export BENCHMARK_SCENARIO_DIR="${SCENARIO_DIR}"
 
-"${BENCHMARK_DIR}/bin/test-${SCENE_DIR}" ${RUN_ARGS} 2>&1 | tee "${BENCHMARK_DIR}/results/test-${SCENE_DIR}-$(date +%Y%m%d-%H%M%S).log"
+if [[ "${CLI_MODE}" == "true" ]]; then
+    export BENCHMARK_JOBS="${JOBS}"
+    export BENCHMARK_PODS="${PODS}"
+    export BENCHMARK_CPU="${CPU}"
+    export BENCHMARK_MEMORY="${MEMORY}"
+    export BENCHMARK_MIN_AVAILABLE="${MIN_AVAILABLE}"
+    export BENCHMARK_QUEUE="${QUEUE}"
+fi
 
-log_info "Tests completed"
+RESULT_FILE="${BENCHMARK_DIR}/results/test-${SCENE_DIR}-$(date +%Y%m%d-%H%M%S).log"
+"${BENCHMARK_DIR}/bin/test-${SCENE_DIR}" ${RUN_ARGS} 2>&1 | tee "${RESULT_FILE}"
+
+log_info "Tests completed. Results saved to: ${RESULT_FILE}"

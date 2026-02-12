@@ -44,19 +44,23 @@ benchmark/
 ├── testcases/
 │   ├── default/                      # Default scenario (no gang scheduling)
 │   │   └── manifests/
-│   │       ├── scheduler-config.yaml
-│   │       ├── queue.yaml
-│   │       ├── node-heartbeat.yaml   # KWOK Stages
-│   │       ├── pod-complete.yaml
-│   │       └── pod-delete.yaml
+│   │       ├── kwok/                 # KWOK Stages
+│   │       │   ├── node-heartbeat.yaml
+│   │       │   ├── pod-complete.yaml
+│   │       │   └── pod-delete.yaml
+│   │       └── volcano/              # Volcano configs
+│   │           ├── scheduler-config.yaml
+│   │           └── queue.yaml
 │   └── gang/                         # Gang scheduling scenario
 │       ├── manifests/
-│       │   ├── scheduler-config.yaml # Gang plugin enabled
-│       │   ├── queue.yaml
-│       │   ├── vcjob-template.yaml   # VCJob YAML template
-│       │   ├── node-heartbeat.yaml
-│       │   ├── pod-complete.yaml
-│       │   └── pod-delete.yaml
+│       │   ├── kwok/                 # KWOK Stages
+│       │   │   ├── node-heartbeat.yaml
+│       │   │   ├── pod-complete.yaml
+│       │   │   └── pod-delete.yaml
+│       │   └── volcano/              # Volcano configs
+│       │       ├── scheduler-config.yaml  # Gang plugin enabled
+│       │       ├── queue.yaml
+│       │       └── vcjob-template.yaml    # VCJob YAML template
 │       ├── gang_test.go              # TestFromCLI + shared test logic
 │       ├── case_20x50_test.go        # Predefined: 20 jobs × 50 pods
 │       └── case_10x100_test.go       # Predefined: 10 jobs × 100 pods
@@ -100,9 +104,12 @@ make test                # Runs all tests in the current SCENARIO
 
 ### 2. Ad-hoc CLI Tests
 
-Run custom tests with arbitrary parameters via environment variables:
+Run custom tests with arbitrary parameters via command-line options:
 
 ```bash
+# Via run-tests.sh directly
+./scripts/run-tests.sh gang --jobs=5 --pods=200 --cpu=2 --memory=2Gi
+
 # Via Makefile
 make test-cli SCENARIO=gang JOBS=5 PODS=200 CPU=2 MEMORY=2Gi
 
@@ -111,6 +118,17 @@ BENCHMARK_SCENARIO=gang BENCHMARK_JOBS=10 BENCHMARK_PODS=100 \
   BENCHMARK_CPU=1 BENCHMARK_MEMORY=1Gi \
   go test -v -run TestFromCLI -timeout 600s ./testcases/gang/
 ```
+
+run-tests.sh CLI options (gang scenario):
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--jobs=N` | _(required)_ | Number of VCJobs to create |
+| `--pods=N` | _(required)_ | Number of pods per job |
+| `--cpu=N` | `1` | CPU request per pod |
+| `--memory=SIZE` | `1Gi` | Memory request per pod |
+| `--min-available=N` | same as --pods | minAvailable for gang scheduling |
+| `--queue=NAME` | `benchmark-queue` | Volcano queue name |
 
 CLI environment variables:
 

@@ -1,15 +1,20 @@
 package gang_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"text/template"
 	"time"
 
 	benchpkg "volcano.sh/volcano/benchmark/pkg"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 // VCJobConfig defines the configuration for a single VCJob.
@@ -27,108 +32,61 @@ func TestMain(m *testing.M) {
 	benchpkg.InitTestMain(m)
 }
 
-// GangProvider encapsulates gang scheduling test operations.
-type GangProvider struct {
-	benchpkg.Options
+// getScenarioDir returns the scenario directory path from environment or default.
+func getScenarioDir() string {
+	if dir := os.Getenv("BENCHMARK_SCENARIO_DIR"); dir != "" {
+		return dir
+	}
+	// Default: assume running from volcano root, scenario is "gang"
+	return "benchmark/testcases/gang"
 }
 
-// AddNodes creates KWOK fake nodes via the Go client.
-func (p *GangProvider) AddNodes(ctx context.Context) error {
-	builder := benchpkg.NewNodeBuilder().
-		WithFastReady().
-		WithCPU(p.CpuPerNode).
-		WithMemory(p.MemoryPerNode)
-	for i := 0; i < p.NodeSize; i++ {
-		err := benchpkg.Resources.Create(ctx,
-			builder.WithName(fmt.Sprintf("kwok-node-%d", i)).Build(),
-		)
-		if err != nil {
-			return fmt.Errorf("creating node %d: %w", i, err)
-		}
-	}
-	return nil
-}
+// BuildVCJob constructs a Volcano Job from the vcjob-template.yaml file.
+func BuildVCJob(cfg VCJobConfig, index uint64) (*unstructured.Unstructured, error) {
+	scenarioDir := getScenarioDir()
+	templatePath := filepath.Join(scenarioDir, "manifests", "volcano", "vcjob-template.yaml")
 
-// BuildVCJob constructs a Volcano Job as an unstructured object using pure Go structs.
-func BuildVCJob(cfg VCJobConfig, index uint64) *unstructured.Unstructured {
-	name := fmt.Sprintf("%s-%d", cfg.Name, index)
-
-	// Build container resources
-	containers := []interface{}{
-		map[string]interface{}{
-			"name":  "worker",
-			"image": "busybox:1.36",
-			"command": []interface{}{
-				"sh", "-c", "sleep 30",
-			},
-			"resources": map[string]interface{}{
-				"requests": map[string]interface{}{
-					"cpu":    cfg.CPU,
-					"memory": cfg.Memory,
-				},
-			},
-		},
+	tmplContent, err := os.ReadFile(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading vcjob template %s: %w", templatePath, err)
 	}
 
-	// Build tolerations for KWOK nodes
-	tolerations := []interface{}{
-		map[string]interface{}{
-			"key":      "kwok.x-k8s.io/node",
-			"operator": "Exists",
-			"effect":   "NoSchedule",
-		},
+	tmpl, err := template.New("vcjob").Parse(string(tmplContent))
+	if err != nil {
+		return nil, fmt.Errorf("parsing vcjob template: %w", err)
 	}
 
-	// Build node selector for KWOK nodes
-	nodeSelector := map[string]interface{}{
-		"type": "kwok",
+	// Template data
+	data := map[string]interface{}{
+		"Name":         fmt.Sprintf("%s-%d", cfg.Name, index),
+		"Replicas":     cfg.Replicas,
+		"MinAvailable": cfg.MinAvailable,
+		"CPU":          cfg.CPU,
+		"Memory":       cfg.Memory,
+		"Queue":        cfg.Queue,
 	}
 
-	// Build task spec
-	task := map[string]interface{}{
-		"name":     "worker",
-		"replicas": int64(cfg.Replicas),
-		"template": map[string]interface{}{
-			"spec": map[string]interface{}{
-				"schedulerName": "volcano",
-				"containers":    containers,
-				"tolerations":   tolerations,
-				"nodeSelector":  nodeSelector,
-				"restartPolicy": "Never",
-			},
-		},
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("executing vcjob template: %w", err)
 	}
 
-	// Build the VCJob
-	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "batch.volcano.sh/v1alpha1",
-			"kind":       "Job",
-			"metadata": map[string]interface{}{
-				"name":      name,
-				"namespace": "default",
-			},
-			"spec": map[string]interface{}{
-				"schedulerName": "volcano",
-				"minAvailable":  int64(cfg.MinAvailable),
-				"queue":         cfg.Queue,
-				"tasks":         []interface{}{task},
-				"plugins": map[string]interface{}{
-					"svc": []interface{}{},
-					"env": []interface{}{},
-				},
-			},
-		},
+	obj := &unstructured.Unstructured{}
+	if err := yaml.Unmarshal(buf.Bytes(), &obj.Object); err != nil {
+		return nil, fmt.Errorf("unmarshaling vcjob yaml: %w", err)
 	}
 
-	return obj
+	return obj, nil
 }
 
 // CreateGangJobs creates multiple VCJobs and returns the submission timestamp.
 func CreateGangJobs(ctx context.Context, cfg VCJobConfig) (time.Time, error) {
 	submitTime := time.Now()
 	for i := 0; i < cfg.Count; i++ {
-		obj := BuildVCJob(cfg, benchpkg.Index())
+		obj, err := BuildVCJob(cfg, benchpkg.Index())
+		if err != nil {
+			return submitTime, fmt.Errorf("building vcjob %d: %w", i, err)
+		}
 		if err := benchpkg.Resources.Create(ctx, obj); err != nil {
 			return submitTime, fmt.Errorf("creating vcjob %d: %w", i, err)
 		}
