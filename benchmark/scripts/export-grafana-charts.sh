@@ -39,6 +39,46 @@ PANELS=(
     "3|job-e2e-duration|800|400"
 )
 
+render_dashboard() {
+    local output_file="${CHARTS_DIR}/dashboard-full.png"
+    local width=1600
+    local height=1200
+    local max_retries=3
+    local retry=0
+
+    local render_url="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/volcano-benchmark"
+    render_url="${render_url}?orgId=1&from=${TIME_FROM}&to=${TIME_TO}"
+    render_url="${render_url}&width=${width}&height=${height}&tz=UTC&timeout=60"
+
+    while [[ $retry -lt $max_retries ]]; do
+        log_info "Rendering full dashboard attempt $((retry + 1))..."
+        local http_code
+        http_code=$(curl -s -o "${output_file}" -w "%{http_code}" \
+            --max-time 90 \
+            "${render_url}")
+
+        if [[ "${http_code}" == "200" ]] && [[ -s "${output_file}" ]]; then
+            local file_type
+            file_type=$(file -b "${output_file}" 2>/dev/null || echo "unknown")
+            if echo "${file_type}" | grep -qi "png\|image"; then
+                log_info "  Saved: ${output_file} ($(du -h "${output_file}" | cut -f1))"
+                return 0
+            else
+                log_warn "  Response is not a PNG image (${file_type}), retrying..."
+            fi
+        else
+            log_warn "  HTTP ${http_code}, retrying..."
+        fi
+
+        retry=$((retry + 1))
+        sleep 3
+    done
+
+    log_error "Failed to render full dashboard after ${max_retries} attempts"
+    rm -f "${output_file}"
+    return 1
+}
+
 wait_for_grafana() {
     local max_retries=30
     local i=0
@@ -74,7 +114,6 @@ render_panel() {
         log_info "Rendering panel ${panel_id} (${filename}) attempt $((retry + 1))..."
         local http_code
         http_code=$(curl -s -o "${output_file}" -w "%{http_code}" \
-            -H "Authorization: Basic YWRtaW46YWRtaW4=" \
             --max-time 60 \
             "${render_url}")
 
@@ -109,6 +148,14 @@ log_info "Time range: ${TIME_FROM} -> ${TIME_TO}"
 SUCCESS=0
 FAILED=0
 
+# Render full dashboard screenshot
+if render_dashboard; then
+    SUCCESS=$((SUCCESS + 1))
+else
+    FAILED=$((FAILED + 1))
+fi
+
+# Render individual panels
 for panel_def in "${PANELS[@]}"; do
     IFS='|' read -r panel_id filename width height <<< "${panel_def}"
     if render_panel "${panel_id}" "${filename}" "${width}" "${height}"; then

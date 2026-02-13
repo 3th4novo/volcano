@@ -169,7 +169,7 @@ This runs `make images` in the Volcano root directory and loads the resulting im
 make install-volcano SCENARIO=gang
 ```
 
-Installs Volcano from the local Helm chart at `installer/helm/chart/volcano`. Applies the scenario's scheduler config and queue.
+Installs Volcano from the local Helm chart at `installer/helm/chart/volcano`. Applies the scenario's scheduler config.
 
 **Option B — Specific release version:**
 

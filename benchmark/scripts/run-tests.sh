@@ -147,6 +147,22 @@ if [[ "${CLI_MODE}" == "true" ]]; then
 fi
 
 RESULT_FILE="${BENCHMARK_DIR}/results/test-${SCENE_DIR}-$(date +%Y%m%d-%H%M%S).log"
+
+# Record test start time (epoch milliseconds)
+START_TIME_MS=$(date +%s%3N)
+
 "${BENCHMARK_DIR}/bin/test-${SCENE_DIR}" ${RUN_ARGS} 2>&1 | tee "${RESULT_FILE}"
 
+# Record test end time (epoch milliseconds)
+END_TIME_MS=$(date +%s%3N)
+
 log_info "Tests completed. Results saved to: ${RESULT_FILE}"
+
+# Wait for Prometheus to scrape final metrics (scrape interval = 1s)
+log_info "Waiting 5s for Prometheus to collect final metrics..."
+sleep 5
+
+# Auto-collect report with the exact test time window
+log_info "Collecting report and exporting Grafana charts..."
+bash "$(dirname "$0")/collect-report.sh" --from "${START_TIME_MS}" --to "${END_TIME_MS}" \
+    || log_warn "Report collection failed (monitoring may not be available)"

@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # collect-report.sh — Collect test report
+#
+# Usage:
+#   ./scripts/collect-report.sh [--from <epoch_ms>] [--to <epoch_ms>]
 
 source "$(dirname "$0")/common.sh"
 require_cmd curl jq
@@ -7,6 +10,17 @@ require_cmd curl jq
 PROM_URL="${PROM_URL:-http://localhost:30090}"
 RESULTS_DIR="${BENCHMARK_DIR}/results"
 mkdir -p "${RESULTS_DIR}"
+
+# Parse --from/--to for time range
+TIME_FROM=""
+TIME_TO=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --from) TIME_FROM="$2"; shift 2 ;;
+        --to)   TIME_TO="$2";   shift 2 ;;
+        *)      shift ;;
+    esac
+done
 
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 REPORT_FILE="${RESULTS_DIR}/report-${TIMESTAMP}.json"
@@ -61,6 +75,10 @@ log_info "  Pods scheduled: ${POD_SCHEDULED}"
 log_info ""
 log_info "Grafana dashboard: http://localhost:30080/d/volcano-benchmark"
 
-# Export Grafana charts as PNG images
+# Export Grafana charts as PNG images, passing time range if available
+CHART_ARGS=""
+if [[ -n "${TIME_FROM}" && -n "${TIME_TO}" ]]; then
+    CHART_ARGS="--from ${TIME_FROM} --to ${TIME_TO}"
+fi
 log_info "Exporting Grafana dashboard charts..."
-bash "$(dirname "$0")/export-grafana-charts.sh" || log_warn "Chart export failed (Image Renderer may not be available)"
+bash "$(dirname "$0")/export-grafana-charts.sh" ${CHART_ARGS} || log_warn "Chart export failed (Image Renderer may not be available)"
