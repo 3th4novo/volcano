@@ -29,7 +29,7 @@ create-cluster:
 
 .PHONY: create-nodes
 create-nodes:
-	bash scripts/create-kwok-nodes.sh
+	SCENARIO=$(SCENARIO) bash scripts/create-kwok-nodes.sh
 
 .PHONY: build-images
 build-images:
@@ -42,9 +42,9 @@ endif
 .PHONY: install-volcano
 install-volcano:
 ifdef VOLCANO_VERSION
-	bash scripts/install-volcano.sh --release $(VOLCANO_VERSION)
+	SCENARIO=$(SCENARIO) bash scripts/install-volcano.sh --release $(VOLCANO_VERSION)
 else
-	bash scripts/install-volcano.sh --local
+	SCENARIO=$(SCENARIO) bash scripts/install-volcano.sh --local
 endif
 
 .PHONY: install-monitoring
