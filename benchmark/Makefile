@@ -15,12 +15,21 @@ export MEMORY_PER_NODE
 .PHONY: all
 all: gang-all default-all cleanup-all
 
-# Environment setup - if volcano version specified, install the corresponding volcano version
+# Environment setup - requires SCENARIO to be set (e.g., make setup SCENARIO=gang)
 .PHONY: setup
+setup:
+	@echo "Setting up environment for scenario: $(SCENARIO)"
 ifdef VOLCANO_VERSION
-setup: create-cluster create-nodes install-volcano install-monitoring
+	$(MAKE) create-cluster
+	$(MAKE) create-nodes SCENARIO=$(SCENARIO)
+	$(MAKE) install-volcano SCENARIO=$(SCENARIO)
+	$(MAKE) install-monitoring
 else
-setup: create-cluster create-nodes build-images install-volcano install-monitoring
+	$(MAKE) create-cluster
+	$(MAKE) create-nodes SCENARIO=$(SCENARIO)
+	$(MAKE) build-images
+	$(MAKE) install-volcano SCENARIO=$(SCENARIO)
+	$(MAKE) install-monitoring
 endif
 
 .PHONY: create-cluster
