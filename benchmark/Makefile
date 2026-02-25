@@ -12,9 +12,8 @@ export KWOK_NODE_COUNT
 export CPU_PER_NODE
 export MEMORY_PER_NODE
 
-# Full test workflow
 .PHONY: all
-all: setup test report
+all: gang-all default-all cleanup-all
 
 # Environment setup - if volcano version specified, install the corresponding volcano version
 .PHONY: setup
@@ -87,3 +86,16 @@ test-gang-20x50:
 .PHONY: test-gang-10x100
 test-gang-10x100:
 	SCENARIO=gang bash scripts/run-tests.sh gang/case_10x100
+
+# Run all test cases in a scenario: setup -> test all cases -> cleanup
+.PHONY: gang-all
+gang-all:
+	$(MAKE) setup SCENARIO=gang
+	$(MAKE) test TEST_CASE=gang SCENARIO=gang
+	$(MAKE) cleanup
+
+.PHONY: default-all
+default-all:
+	$(MAKE) setup SCENARIO=default
+	$(MAKE) test TEST_CASE=default SCENARIO=default
+	$(MAKE) cleanup
