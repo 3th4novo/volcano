@@ -16,6 +16,7 @@ export MEMORY_PER_NODE
 all: gang-all default-all cleanup-all
 
 # Environment setup - requires SCENARIO to be set (e.g., make setup SCENARIO=gang)
+# Can also install specific volcano version as make setup SCENARIO=gang VOLCANO_VERSION=v1.14.0
 .PHONY: setup
 setup:
 	@echo "Setting up environment for scenario: $(SCENARIO)"
