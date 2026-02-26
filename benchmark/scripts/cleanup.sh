@@ -46,6 +46,10 @@ kubectl delete queues.scheduling.volcano.sh --all --ignore-not-found=true 2>/dev
 
 log_info "Cleaning up Volcano..."
 helm uninstall volcano -n volcano-system 2>/dev/null || true
+
+log_info "Cleaning up residual Helm hook Jobs in volcano-system..."
+kubectl delete job -n volcano-system --all --ignore-not-found=true 2>/dev/null || true
+
 kubectl delete namespace volcano-system --ignore-not-found=true 2>/dev/null || true
 
 # Clean up Volcano CRDs (left behind after helm uninstall)

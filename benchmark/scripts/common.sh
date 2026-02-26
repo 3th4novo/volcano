@@ -16,7 +16,7 @@ export SCENARIO="${SCENARIO:-default}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export BENCHMARK_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 export VOLCANO_ROOT="$(cd "${BENCHMARK_DIR}/.." && pwd)"
-export SCENARIO_DIR="${BENCHMARK_DIR}/testcases/${SCENARIO}/manifests"
+export SCENARIO_DIR="${BENCHMARK_DIR}/testcases/${SCENARIO}"
 
 # Logging functions
 log_info()  { echo "[INFO]  $(date '+%H:%M:%S') $*"; }

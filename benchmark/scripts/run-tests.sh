@@ -164,5 +164,5 @@ sleep 5
 
 # Auto-collect report with the exact test time window
 log_info "Collecting report and exporting Grafana charts..."
-bash "$(dirname "$0")/collect-report.sh" --from "${START_TIME_MS}" --to "${END_TIME_MS}" \
+bash "${SCRIPT_DIR}/collect-report.sh" --from "${START_TIME_MS}" --to "${END_TIME_MS}" \
     || log_warn "Report collection failed (monitoring may not be available)"
