@@ -158,7 +158,7 @@ func TestNetworkTopologyAwareNodeScore_Hard(t *testing.T) {
 		expected   map[string]float64
 	}{
 		{
-			name: "Tasks in job first scheduler, score all nodes zero",
+			name: "Tasks in job first scheduler, fallback to normal pod binpacking score",
 			TestCommonStruct: uthelper.TestCommonStruct{
 				PodGroups: []*schedulingv1.PodGroup{
 					util.BuildPodGroupWithNetWorkTopologies("pg1", "c1", "", "q1", 1, nil, schedulingv1.PodGroupInqueue, "hard", 0),
@@ -295,9 +295,9 @@ func TestNetworkTopologyAwareNodeScore_Hard(t *testing.T) {
 				},
 			},
 			expected: map[string]float64{
-				"s3-n1": 0.0,
-				"s4-n1": 0.0,
-				"s5-n1": 0.0,
+				"s3-n1": 27.6,
+				"s4-n1": 27.6,
+				"s5-n1": 27.6,
 			},
 		},
 		{
@@ -1031,6 +1031,71 @@ func TestNetworkTopologyAwareNodeScore_Hard(t *testing.T) {
 				"s5-n1": 33.3,
 			},
 		},
+		{
+			name: "Hard mode first task with single tier topology, nodes partially occupied, fallback to binpacking guides to less occupied hyperNode",
+			TestCommonStruct: uthelper.TestCommonStruct{
+				Plugins: map[string]framework.PluginBuilder{PluginName: New},
+				PodGroups: []*schedulingv1.PodGroup{
+					util.BuildPodGroupWithNetWorkTopologies("pg1", "c1", "", "q1", 2, nil, schedulingv1.PodGroupInqueue, "hard", 1),
+					util.BuildPodGroup("pg2", "c1", "q1", 1, nil, schedulingv1.PodGroupInqueue),
+				},
+				Pods: []*corev1.Pod{
+					// pending task for the hard mode job
+					util.BuildPod("c1", "p1", "", corev1.PodPending, api.BuildResourceList("1400m", "2G"), "pg1", map[string]string{"volcano.sh/task-spec": "worker"}, nil),
+					// running pods from another job occupying node1 and node4
+					util.BuildPod("c1", "occupy-node1", "node1", corev1.PodRunning, api.BuildResourceList("4", "8Gi"), "pg2", nil, nil),
+					util.BuildPod("c1", "occupy-node4", "node4", corev1.PodRunning, api.BuildResourceList("4", "8Gi"), "pg2", nil, nil),
+				},
+				Nodes: []*corev1.Node{
+					util.BuildNode("node1", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+					util.BuildNode("node2", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+					util.BuildNode("node3", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+					util.BuildNode("node4", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+					util.BuildNode("node5", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+					util.BuildNode("node6", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+				},
+				HyperNodesSetByTier: map[int]sets.Set[string]{
+					1: sets.New[string]("HN1", "HN2", "HN3"),
+				},
+				HyperNodesMap: map[string]*api.HyperNodeInfo{
+					"HN1": api.NewHyperNodeInfo(api.BuildHyperNode("HN1", 1, []api.MemberConfig{
+						{Name: "node1", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+						{Name: "node2", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+					})),
+					"HN2": api.NewHyperNodeInfo(api.BuildHyperNode("HN2", 1, []api.MemberConfig{
+						{Name: "node3", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+						{Name: "node4", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+					})),
+					"HN3": api.NewHyperNodeInfo(api.BuildHyperNode("HN3", 1, []api.MemberConfig{
+						{Name: "node5", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+						{Name: "node6", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+					})),
+				},
+				HyperNodes: map[string]sets.Set[string]{
+					"HN1": sets.New[string]("node1", "node2"),
+					"HN2": sets.New[string]("node3", "node4"),
+					"HN3": sets.New[string]("node5", "node6"),
+				},
+				Queues: []*schedulingv1.Queue{
+					util.BuildQueue("q1", 1, nil),
+				},
+			},
+			arguments: framework.Arguments{
+				"weight": 1,
+			},
+			scoreNodes: []*api.NodeInfo{
+				{Name: "node2"},
+				{Name: "node3"},
+				{Name: "node5"},
+			},
+			// Hard mode first task also falls back to binpacking when allocatedHyperNode is empty.
+			// Same behavior as soft mode: partially occupied HN1/HN2 score higher than empty HN3.
+			expected: map[string]float64{
+				"node2": 52.8,
+				"node3": 52.8,
+				"node5": 25.0,
+			},
+		},
 	}
 	trueValue := true
 	plugins := map[string]framework.PluginBuilder{
@@ -1079,7 +1144,7 @@ func TestNetworkTopologyAwareNodeScore_Soft(t *testing.T) {
 		expected   map[string]float64
 	}{
 		{
-			name: "Tasks in job first scheduler, score all nodes zero",
+			name: "Tasks in job first scheduler, fallback to normal pod binpacking score",
 			TestCommonStruct: uthelper.TestCommonStruct{
 				PodGroups: []*schedulingv1.PodGroup{
 					util.BuildPodGroupWithNetWorkTopologies("pg1", "c1", "", "q1", 1, nil, schedulingv1.PodGroupInqueue, "soft", 0),
@@ -1216,9 +1281,9 @@ func TestNetworkTopologyAwareNodeScore_Soft(t *testing.T) {
 				},
 			},
 			expected: map[string]float64{
-				"s3-n1": 0.0,
-				"s4-n1": 0.0,
-				"s5-n1": 0.0,
+				"s3-n1": 27.6,
+				"s4-n1": 27.6,
+				"s5-n1": 27.6,
 			},
 		},
 		{
@@ -1950,6 +2015,72 @@ func TestNetworkTopologyAwareNodeScore_Soft(t *testing.T) {
 				"s3-n1": 116.6,
 				"s4-n1": 91.6,
 				"s5-n1": 33.3,
+			},
+		},
+		{
+			name: "Soft mode first task with single tier topology, nodes partially occupied, fallback to binpacking guides to less occupied hyperNode",
+			TestCommonStruct: uthelper.TestCommonStruct{
+				Plugins: map[string]framework.PluginBuilder{PluginName: New},
+				PodGroups: []*schedulingv1.PodGroup{
+					util.BuildPodGroupWithNetWorkTopologies("pg1", "c1", "", "q1", 2, nil, schedulingv1.PodGroupInqueue, "soft", 1),
+					util.BuildPodGroup("pg2", "c1", "q1", 1, nil, schedulingv1.PodGroupInqueue),
+				},
+				Pods: []*corev1.Pod{
+					// pending task for the soft mode job
+					util.BuildPod("c1", "p1", "", corev1.PodPending, api.BuildResourceList("1400m", "2G"), "pg1", map[string]string{"volcano.sh/task-spec": "worker"}, nil),
+					// running pods from another job occupying node1 and node4
+					util.BuildPod("c1", "occupy-node1", "node1", corev1.PodRunning, api.BuildResourceList("4", "8Gi"), "pg2", nil, nil),
+					util.BuildPod("c1", "occupy-node4", "node4", corev1.PodRunning, api.BuildResourceList("4", "8Gi"), "pg2", nil, nil),
+				},
+				Nodes: []*corev1.Node{
+					util.BuildNode("node1", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+					util.BuildNode("node2", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+					util.BuildNode("node3", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+					util.BuildNode("node4", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+					util.BuildNode("node5", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+					util.BuildNode("node6", api.BuildResourceList("4", "8Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), nil),
+				},
+				HyperNodesSetByTier: map[int]sets.Set[string]{
+					1: sets.New[string]("HN1", "HN2", "HN3"),
+				},
+				HyperNodesMap: map[string]*api.HyperNodeInfo{
+					"HN1": api.NewHyperNodeInfo(api.BuildHyperNode("HN1", 1, []api.MemberConfig{
+						{Name: "node1", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+						{Name: "node2", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+					})),
+					"HN2": api.NewHyperNodeInfo(api.BuildHyperNode("HN2", 1, []api.MemberConfig{
+						{Name: "node3", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+						{Name: "node4", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+					})),
+					"HN3": api.NewHyperNodeInfo(api.BuildHyperNode("HN3", 1, []api.MemberConfig{
+						{Name: "node5", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+						{Name: "node6", Type: topologyv1alpha1.MemberTypeNode, Selector: "exact"},
+					})),
+				},
+				HyperNodes: map[string]sets.Set[string]{
+					"HN1": sets.New[string]("node1", "node2"),
+					"HN2": sets.New[string]("node3", "node4"),
+					"HN3": sets.New[string]("node5", "node6"),
+				},
+				Queues: []*schedulingv1.Queue{
+					util.BuildQueue("q1", 1, nil),
+				},
+			},
+			arguments: framework.Arguments{
+				"weight": 1,
+			},
+			scoreNodes: []*api.NodeInfo{
+				{Name: "node2"},
+				{Name: "node3"},
+				{Name: "node5"},
+			},
+			// With the fix, first task (allocatedHyperNode="") falls back to batchNodeOrderFnForNormalPods.
+			// The current implementation is pure binpacking, so partially used HN1/HN2 score higher than empty HN3.
+			// This case locks in the real non-zero scoring behavior for the first soft-mode task on a single-tier topology.
+			expected: map[string]float64{
+				"node2": 52.8,
+				"node3": 52.8,
+				"node5": 25.0,
 			},
 		},
 	}

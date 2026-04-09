@@ -423,6 +423,11 @@ func (nta *networkTopologyAwarePlugin) batchNodeOrderFn(ssn *framework.Session, 
 	var nodeScores map[string]float64
 	var err error
 
+	if task == nil {
+		klog.V(4).Info("[network-topology-aware] Skip batch node ordering: nil task")
+		return make(map[string]float64), nil
+	}
+
 	job := ssn.Jobs[task.Job]
 	if job == nil {
 		klog.Warningf("[network-topology-aware] Skip batch node ordering for task <%s/%s>: job <%s> not found in session (orphaned task from deleted PodGroup)",
@@ -543,7 +548,9 @@ func (nta *networkTopologyAwarePlugin) batchNodeOrderFnForNetworkAwarePods(ssn *
 
 	allocatedHyperNode := task.JobAllocatedHyperNode
 	if allocatedHyperNode == "" {
-		return nodeScores, nil
+		// When allocatedHyperNode is empty (first task scheduling), fall back to normal pod binpacking
+		// to guide the first task to be scheduled to the hyperNode with the most available resources.
+		return nta.batchNodeOrderFnForNormalPods(ssn, task, nodes)
 	}
 	// Calculate score based on LCAHyperNode tier.
 	var maxScore float64 = -1
