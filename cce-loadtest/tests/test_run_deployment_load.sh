@@ -19,6 +19,7 @@ manifest="$(${SCRIPT} render)"
 
 assert_contains "${manifest}" "kind: Deployment"
 assert_contains "${manifest}" "name: cce-resource-consumer"
+assert_contains "${manifest}" "image: swr.cn-north-7.myhuaweicloud.com/paas_cce_wwx588067/resource_consumer:latest"
 assert_contains "${manifest}" "replicas: 58"
 assert_contains "${manifest}" "schedulerName: volcano"
 assert_contains "${manifest}" "scheduling.volcano.sh/queue-name: cce-loadtest"

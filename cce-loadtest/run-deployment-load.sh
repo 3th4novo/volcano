@@ -5,7 +5,7 @@ NAMESPACE="${NAMESPACE:-volcano-loadtest}"
 QUEUE_NAME="${QUEUE_NAME:-cce-loadtest}"
 DEPLOYMENT_NAME="${DEPLOYMENT_NAME:-cce-resource-consumer}"
 CONTAINER_NAME="${CONTAINER_NAME:-consumer}"
-IMAGE="${IMAGE:-resource_consumer:latest}"
+IMAGE="${IMAGE:-swr.cn-north-7.myhuaweicloud.com/paas_cce_wwx588067/resource_consumer:latest}"
 REPLICAS="${REPLICAS:-58}"
 
 CPU_REQUEST="${CPU_REQUEST:-200m}"

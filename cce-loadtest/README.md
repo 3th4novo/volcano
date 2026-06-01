@@ -63,11 +63,13 @@ kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1" | head
 
 脚本不会调用 `stress-ng`。内存压力由 `stress --vm` 产生；CPU 的 `0 -> 200m` 线性压力由脚本用轻量 duty-cycle 控制，因为普通 `stress` 没有 `--cpu-load` 这类百分比参数。
 
-如果镜像不在默认仓库，运行脚本时设置 `IMAGE`：
+脚本默认使用你的 SWR 镜像：
 
 ```bash
-export IMAGE='swr.cn-north-4.myhuaweicloud.com/<org>/resource_consumer:<tag>'
+IMAGE='swr.cn-north-7.myhuaweicloud.com/paas_cce_wwx588067/resource_consumer:latest'
 ```
+
+如果要临时换镜像，运行脚本前覆盖 `IMAGE` 即可。
 
 ## 2. 确认当前 5 个节点
 
