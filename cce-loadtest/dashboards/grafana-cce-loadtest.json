@@ -460,8 +460,8 @@
       {
         "current": {
           "selected": true,
-          "text": "volcano-loadtest",
-          "value": "volcano-loadtest"
+          "text": "default",
+          "value": "default"
         },
         "hide": 0,
         "label": "Namespace",
@@ -469,11 +469,11 @@
         "options": [
           {
             "selected": true,
-            "text": "volcano-loadtest",
-            "value": "volcano-loadtest"
+            "text": "default",
+            "value": "default"
           }
         ],
-        "query": "volcano-loadtest",
+        "query": "default",
         "type": "textbox"
       },
       {

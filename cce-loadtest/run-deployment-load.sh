@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NAMESPACE="${NAMESPACE:-volcano-loadtest}"
+NAMESPACE="${NAMESPACE:-default}"
 QUEUE_NAME="${QUEUE_NAME:-cce-loadtest}"
 DEPLOYMENT_NAME="${DEPLOYMENT_NAME:-cce-resource-consumer}"
 CONTAINER_NAME="${CONTAINER_NAME:-consumer}"
 IMAGE="${IMAGE:-swr.cn-north-7.myhuaweicloud.com/paas_cce_wwx588067/resource_consumer:latest}"
+IMAGE_PULL_SECRET="${IMAGE_PULL_SECRET:-default-secret}"
+SWR_VERSION="${SWR_VERSION:-Shared Edition}"
 REPLICAS="${REPLICAS:-58}"
 
 CPU_REQUEST="${CPU_REQUEST:-200m}"
@@ -45,6 +47,8 @@ Common environment variables:
   NAMESPACE                  default: ${NAMESPACE}
   QUEUE_NAME                 default: ${QUEUE_NAME}
   DEPLOYMENT_NAME            default: ${DEPLOYMENT_NAME}
+  IMAGE_PULL_SECRET          default: ${IMAGE_PULL_SECRET}
+  SWR_VERSION                default: ${SWR_VERSION}
   REPLICAS                   default: ${REPLICAS}
   PROMETHEUS_URL             optional, for observe queries
 EOF
@@ -57,8 +61,9 @@ require_cmd() {
   }
 }
 
-render_manifest() {
-  cat <<EOF
+render_namespace() {
+  if [[ "${NAMESPACE}" != "default" ]]; then
+    cat <<EOF
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -66,6 +71,22 @@ metadata:
   labels:
     app.kubernetes.io/name: volcano-cce-loadtest
 ---
+EOF
+  fi
+}
+
+render_image_pull_secrets() {
+  if [[ -n "${IMAGE_PULL_SECRET}" ]]; then
+    cat <<EOF
+      imagePullSecrets:
+      - name: ${IMAGE_PULL_SECRET}
+EOF
+  fi
+}
+
+render_manifest() {
+  render_namespace
+  cat <<EOF
 apiVersion: scheduling.volcano.sh/v1beta1
 kind: Queue
 metadata:
@@ -165,6 +186,9 @@ kind: Deployment
 metadata:
   name: ${DEPLOYMENT_NAME}
   namespace: ${NAMESPACE}
+  annotations:
+    description: ""
+    workload.cce.io/swr-version: '[{"version":"${SWR_VERSION}"}]'
   labels:
     app.kubernetes.io/name: ${DEPLOYMENT_NAME}
 spec:
@@ -187,6 +211,7 @@ spec:
     spec:
       schedulerName: volcano
       terminationGracePeriodSeconds: 5
+$(render_image_pull_secrets)
       containers:
       - name: ${CONTAINER_NAME}
         image: ${IMAGE}
@@ -389,8 +414,12 @@ watch_waterline() {
 
 cleanup() {
   require_cmd "${KUBECTL}"
-  "${KUBECTL}" delete namespace "${NAMESPACE}" --ignore-not-found
+  "${KUBECTL}" -n "${NAMESPACE}" delete deployment "${DEPLOYMENT_NAME}" --ignore-not-found
+  "${KUBECTL}" -n "${NAMESPACE}" delete configmap "${DEPLOYMENT_NAME}-scripts" --ignore-not-found
   "${KUBECTL}" delete queue "${QUEUE_NAME}" --ignore-not-found
+  if [[ "${NAMESPACE}" != "default" ]]; then
+    "${KUBECTL}" delete namespace "${NAMESPACE}" --ignore-not-found
+  fi
 }
 
 action="${1:-help}"

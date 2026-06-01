@@ -71,6 +71,28 @@ IMAGE='swr.cn-north-7.myhuaweicloud.com/paas_cce_wwx588067/resource_consumer:lat
 
 如果要临时换镜像，运行脚本前覆盖 `IMAGE` 即可。
 
+脚本默认运行在 `default` namespace，并使用 CCE 自动创建的 SWR 拉取凭据：
+
+```yaml
+metadata:
+  annotations:
+    workload.cce.io/swr-version: '[{"version":"Shared Edition"}]'
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+      - name: default-secret
+```
+
+这两个字段来自 CCE 控制台可正常拉取该镜像的工作负载样例。镜像拉取本质上依赖同 namespace 下的 `imagePullSecrets`，`workload.cce.io/swr-version` 更像 CCE/SWR 工作负载元数据；只加 annotation 但没有可用 secret 时，kubelet 仍然可能无法鉴权拉取镜像。
+
+如果改用非 `default` namespace，需要先确认目标 namespace 里也存在可用拉取凭据，或者覆盖 `IMAGE_PULL_SECRET`：
+
+```bash
+kubectl -n <namespace> get secret default-secret
+NAMESPACE=<namespace> IMAGE_PULL_SECRET=<secret-name> ./run-deployment-load.sh apply
+```
+
 ## 2. 确认当前 5 个节点
 
 ```bash
@@ -131,7 +153,7 @@ kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/nodes/*/node_memory_usage
 查看 Pod 分布：
 
 ```bash
-kubectl -n volcano-loadtest get pods -o wide
+kubectl -n default get pods -o wide
 ```
 
 负载曲线：
@@ -190,8 +212,8 @@ INTERVAL_SECONDS=5 ./run-deployment-load.sh watch-waterline
 
 ```bash
 kubectl top nodes
-kubectl -n volcano-loadtest top pods --containers
-kubectl -n volcano-loadtest get pods -o wide
+kubectl -n default top pods --containers
+kubectl -n default get pods -o wide
 ```
 
 Prometheus 查询：
@@ -209,13 +231,13 @@ Prometheus 查询：
 每节点总内存水位。
 
 ```promql
-100 * sum by (node) (container_memory_working_set_bytes{namespace="volcano-loadtest",pod=~"cce-resource-consumer-.*",container="consumer"}) / sum by (node) (kube_node_status_allocatable{resource="memory",unit="byte"})
+100 * sum by (node) (container_memory_working_set_bytes{namespace="default",pod=~"cce-resource-consumer-.*",container="consumer"}) / sum by (node) (kube_node_status_allocatable{resource="memory",unit="byte"})
 ```
 
 每节点本次测试负载贡献的内存水位。
 
 ```promql
-sum by (node) (rate(container_cpu_usage_seconds_total{namespace="volcano-loadtest",pod=~"cce-resource-consumer-.*",container="consumer"}[1m]))
+sum by (node) (rate(container_cpu_usage_seconds_total{namespace="default",pod=~"cce-resource-consumer-.*",container="consumer"}[1m]))
 ```
 
 每节点本次测试负载贡献的 CPU core 数。
@@ -270,7 +292,7 @@ cce-loadtest/dashboards/grafana-cce-loadtest.json
 
 导入后设置变量：
 
-- `namespace`: `volcano-loadtest`
+- `namespace`: `default`
 - `deployment`: `cce-resource-consumer`
 - `container`: `consumer`
 - `threshold`: `80`
