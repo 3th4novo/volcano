@@ -8,7 +8,7 @@ CONTAINER_NAME="${CONTAINER_NAME:-consumer}"
 IMAGE="${IMAGE:-swr.cn-north-7.myhuaweicloud.com/paas_cce_wwx588067/resource_consumer:latest}"
 IMAGE_PULL_SECRET="${IMAGE_PULL_SECRET:-default-secret}"
 SWR_VERSION="${SWR_VERSION:-Shared Edition}"
-REPLICAS="${REPLICAS:-58}"
+REPLICAS="${REPLICAS:-10}"
 
 CPU_REQUEST="${CPU_REQUEST:-200m}"
 CPU_LIMIT="${CPU_LIMIT:-250m}"

@@ -2,7 +2,7 @@
 
 这个目录用于在华为云 CCE 的真实 Kubernetes 集群上模拟：
 
-- 批量下发 58 副本 Deployment
+- 批量下发可配置副本数的 Deployment，默认 10 副本
 - 每个 Pod 从 0 线性升压到 `500Mi` 内存和 `200m` CPU
 - 每个 Pod 资源声明为 `cpu request=200m, limit=250m`，`memory request=500Mi, limit=600Mi`
 - 滚动升级场景，包括稳态升级和 surge 压力升级
@@ -15,15 +15,20 @@
 - 当前真实内存峰值不到 `10%`，为了让批量负载后集群真实内存水位约 `60%`，新增负载按 `50%` 集群内存估算
 - 需要新增内存：`57344Mi * (60% - 10%) = 28672Mi`
 - 单 Pod 最终真实内存：`500Mi`
-- 副本数：`28672Mi / 500Mi = 57.34`，向上取整为 `58`
+- 若目标是把集群真实内存水位压到约 `60%`，副本数：`28672Mi / 500Mi = 57.34`，向上取整为 `58`
 
-默认 58 个副本时，期望最终负载约为：
+默认 10 个副本时，期望最终负载约为：
+
+- 内存：`10 * 500Mi = 5000Mi`，全集群新增约 `8.7%`
+- CPU：`10 * 200m = 2 core`，全集群新增约 `10%`
+
+当设置 `REPLICAS=58` 时，期望最终负载约为：
 
 - 内存：`58 * 500Mi = 29000Mi`，全集群新增约 `50.6%`，叠加当前不到 `10%` 的基础水位后约 `60%`
 - CPU：`58 * 200m = 11.6 core`，全集群新增约 `58%`
 - CPU request：当前集群已有申请约 `40%`，叠加本次 `58%` 后约 `98%`，调度会比较贴近上限；如果出现 Pending，可临时设置 `REPLICAS=55`
 
-因为节点内存规格不同，58 副本验证的是“集群整体真实内存水位约 60%”。如果调度结果在 8Gi 节点上接近均匀分布，8Gi 节点可能比 16Gi 节点更早接近热点阈值，这正好可以用来观察增强点是否会把更多新负载引导到低水位节点。
+因为节点内存规格不同，`REPLICAS=58` 验证的是“集群整体真实内存水位约 60%”。如果调度结果在 8Gi 节点上接近均匀分布，8Gi 节点可能比 16Gi 节点更早接近热点阈值，这正好可以用来观察增强点是否会把更多新负载引导到低水位节点。
 
 > 注意：Kubernetes 中不要写 `500m` 表示内存。`500m` 是 milli-byte。这里使用 `500Mi` 和 `600Mi`。
 
@@ -135,7 +140,7 @@ kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/nodes/*/node_memory_usage
 - `describedObject.kind` 是 `Node`。
 - `value` 的量纲应是 `0~1` 的比例。Custom Metrics API 常见输出如 `532m`，代表 `0.532`，Volcano 会乘以 100 后作为 `53.2%`。如果直接返回 `53`，Volcano 会理解成 `5300%`，需要调整 adapter 规则。
 
-## 4. 批量下发 58 副本
+## 4. 批量下发负载
 
 先预览生成的 YAML：
 
@@ -143,10 +148,17 @@ kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/nodes/*/node_memory_usage
 ./run-deployment-load.sh render
 ```
 
-下发资源：
+默认下发 10 副本：
 
 ```bash
 ./run-deployment-load.sh apply
+./run-deployment-load.sh wait
+```
+
+如果要按前面的计算把集群真实内存水位压到约 `60%`，显式设置 58 副本：
+
+```bash
+REPLICAS=58 ./run-deployment-load.sh apply
 ./run-deployment-load.sh wait
 ```
 
@@ -164,7 +176,7 @@ kubectl -n default get pods -o wide
 
 ## 5. 滚动升级
 
-稳态滚动升级，总副本数不超过 58：
+稳态滚动升级，总副本数不超过当前 Deployment 副本数：
 
 ```bash
 ./run-deployment-load.sh rollout --safe
@@ -186,7 +198,7 @@ kubectl -n default get pods -o wide
 - `maxSurge: 5`
 - `maxUnavailable: 0`
 
-压力滚动升级期间，理论峰值内存约为：
+当 `REPLICAS=58` 时，压力滚动升级期间理论峰值内存约为：
 
 ```text
 63 * 500Mi = 31500Mi

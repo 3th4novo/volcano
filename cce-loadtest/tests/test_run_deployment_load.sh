@@ -25,7 +25,7 @@ assert_contains "${manifest}" "workload.cce.io/swr-version: '[{\"version\":\"Sha
 assert_contains "${manifest}" "image: swr.cn-north-7.myhuaweicloud.com/paas_cce_wwx588067/resource_consumer:latest"
 assert_contains "${manifest}" "imagePullSecrets:"
 assert_contains "${manifest}" "- name: default-secret"
-assert_contains "${manifest}" "replicas: 58"
+assert_contains "${manifest}" "replicas: 10"
 assert_contains "${manifest}" "schedulerName: volcano"
 assert_contains "${manifest}" "scheduling.volcano.sh/queue-name: cce-loadtest"
 assert_contains "${manifest}" "memory: \"56Gi\""
@@ -57,5 +57,8 @@ assert_contains "${queries}" "stddev"
 assert_contains "${queries}" "max_over_time"
 assert_contains "${queries}" "threshold=80%"
 assert_contains "${queries}" "> bool 80"
+
+override_manifest="$(REPLICAS=58 ${SCRIPT} render)"
+assert_contains "${override_manifest}" "replicas: 58"
 
 echo "PASS: run-deployment-load.sh behavior"
