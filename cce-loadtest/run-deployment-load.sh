@@ -6,7 +6,7 @@ QUEUE_NAME="${QUEUE_NAME:-cce-loadtest}"
 DEPLOYMENT_NAME="${DEPLOYMENT_NAME:-cce-resource-consumer}"
 CONTAINER_NAME="${CONTAINER_NAME:-consumer}"
 IMAGE="${IMAGE:-resource_consumer:latest}"
-REPLICAS="${REPLICAS:-50}"
+REPLICAS="${REPLICAS:-58}"
 
 CPU_REQUEST="${CPU_REQUEST:-200m}"
 CPU_LIMIT="${CPU_LIMIT:-250m}"
@@ -24,12 +24,8 @@ ROLLING_MAX_SURGE="${ROLLING_MAX_SURGE:-0}"
 ROLLING_MAX_UNAVAILABLE="${ROLLING_MAX_UNAVAILABLE:-5}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-10m}"
 KUBECTL="${KUBECTL:-kubectl}"
-HOTSPOT_MEMORY_THRESHOLD="${HOTSPOT_MEMORY_THRESHOLD:-70}"
+HOTSPOT_MEMORY_THRESHOLD="${HOTSPOT_MEMORY_THRESHOLD:-80}"
 PROMETHEUS_URL="${PROMETHEUS_URL:-}"
-
-TARGET_NODE_LABEL_KEY="${TARGET_NODE_LABEL_KEY:-}"
-TARGET_NODE_LABEL_VALUE="${TARGET_NODE_LABEL_VALUE:-true}"
-SPREAD_MODE="${SPREAD_MODE:-none}" # none, soft, hard
 
 usage() {
   cat <<EOF
@@ -50,9 +46,6 @@ Common environment variables:
   QUEUE_NAME                 default: ${QUEUE_NAME}
   DEPLOYMENT_NAME            default: ${DEPLOYMENT_NAME}
   REPLICAS                   default: ${REPLICAS}
-  TARGET_NODE_LABEL_KEY      optional node label key for the selected 5 CCE nodes
-  TARGET_NODE_LABEL_VALUE    optional node label value, default: true
-  SPREAD_MODE                none|soft|hard, default: none
   PROMETHEUS_URL             optional, for observe queries
 EOF
 }
@@ -62,48 +55,6 @@ require_cmd() {
     echo "missing required command: $1" >&2
     exit 1
   }
-}
-
-render_node_selector() {
-  if [[ -n "${TARGET_NODE_LABEL_KEY}" ]]; then
-    cat <<EOF
-      nodeSelector:
-        ${TARGET_NODE_LABEL_KEY}: "${TARGET_NODE_LABEL_VALUE}"
-EOF
-  fi
-}
-
-render_spread_constraints() {
-  case "${SPREAD_MODE}" in
-    none)
-      ;;
-    soft)
-      cat <<EOF
-      topologySpreadConstraints:
-      - maxSkew: 2
-        topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: ScheduleAnyway
-        labelSelector:
-          matchLabels:
-            app.kubernetes.io/name: ${DEPLOYMENT_NAME}
-EOF
-      ;;
-    hard)
-      cat <<EOF
-      topologySpreadConstraints:
-      - maxSkew: 1
-        topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: DoNotSchedule
-        labelSelector:
-          matchLabels:
-            app.kubernetes.io/name: ${DEPLOYMENT_NAME}
-EOF
-      ;;
-    *)
-      echo "invalid SPREAD_MODE=${SPREAD_MODE}; expected none, soft, or hard" >&2
-      exit 1
-      ;;
-  esac
 }
 
 render_manifest() {
@@ -124,7 +75,7 @@ spec:
   reclaimable: false
   capability:
     cpu: "20"
-    memory: "40Gi"
+    memory: "56Gi"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -143,19 +94,21 @@ data:
     RAMP_SECONDS="${RAMP_SECONDS:-20}"
     HOLD_SECONDS="${HOLD_SECONDS:-86400}"
 
-    STRESS_PID=""
     MEM_PID=""
     CPU_PID=""
 
     cleanup() {
-      [ -n "\${STRESS_PID}" ] && kill "\${STRESS_PID}" 2>/dev/null || true
       [ -n "\${MEM_PID}" ] && kill "\${MEM_PID}" 2>/dev/null || true
       [ -n "\${CPU_PID}" ] && kill "\${CPU_PID}" 2>/dev/null || true
     }
     trap cleanup TERM INT EXIT
 
     now_ms() {
-      date +%s%3N 2>/dev/null || echo "\$(date +%s)000"
+      ts="\$(date +%s%3N 2>/dev/null || true)"
+      case "\${ts}" in
+        ""|*[!0-9]*) echo "\$(date +%s)000" ;;
+        *) echo "\${ts}" ;;
+      esac
     }
 
     cpu_loop() {
@@ -173,23 +126,12 @@ data:
       done
     }
 
-    start_stress_ng() {
-      mem_mi="\$1"
-      cpu_millicores="\$2"
-      cpu_load=\$((cpu_millicores / 10))
-      [ "\${cpu_load}" -lt 1 ] && cpu_load=1
-      [ "\${cpu_load}" -gt 100 ] && cpu_load=100
-      [ -n "\${STRESS_PID}" ] && kill "\${STRESS_PID}" 2>/dev/null || true
-      stress-ng --vm 1 --vm-bytes "\${mem_mi}M" --vm-keep --cpu 1 --cpu-load "\${cpu_load}" --timeout "\${HOLD_SECONDS}s" &
-      STRESS_PID="\$!"
-    }
-
-    start_stress_fallback() {
+    start_stress() {
       mem_mi="\$1"
       cpu_millicores="\$2"
       [ -n "\${MEM_PID}" ] && kill "\${MEM_PID}" 2>/dev/null || true
       [ -n "\${CPU_PID}" ] && kill "\${CPU_PID}" 2>/dev/null || true
-      stress --vm 1 --vm-bytes "\${mem_mi}M" --vm-keep --timeout "\${HOLD_SECONDS}s" &
+      stress --vm 1 --vm-bytes "\${mem_mi}M" --vm-keep --timeout "\${HOLD_SECONDS}" &
       MEM_PID="\$!"
       cpu_loop "\${cpu_millicores}" &
       CPU_PID="\$!"
@@ -204,14 +146,11 @@ data:
       [ "\${mem_mi}" -gt "\${TARGET_MEMORY_MI}" ] && mem_mi="\${TARGET_MEMORY_MI}"
       [ "\${cpu_millicores}" -gt "\${TARGET_CPU_MILLICORES}" ] && cpu_millicores="\${TARGET_CPU_MILLICORES}"
 
-      if command -v stress-ng >/dev/null 2>&1; then
-        start_stress_ng "\${mem_mi}" "\${cpu_millicores}"
-      elif command -v stress >/dev/null 2>&1; then
-        start_stress_fallback "\${mem_mi}" "\${cpu_millicores}"
-      else
-        echo "neither stress-ng nor stress is available in the image" >&2
+      if ! command -v stress >/dev/null 2>&1; then
+        echo "stress is not available in the image" >&2
         exit 1
       fi
+      start_stress "\${mem_mi}" "\${cpu_millicores}"
 
       echo "ramp step=\${i} memory=\${mem_mi}Mi cpu=\${cpu_millicores}m"
       i=\$((i + 1))
@@ -247,8 +186,6 @@ spec:
         loadtest.volcano.sh/rollout-id: "initial"
     spec:
       schedulerName: volcano
-$(render_node_selector)
-$(render_spread_constraints)
       terminationGracePeriodSeconds: 5
       containers:
       - name: ${CONTAINER_NAME}

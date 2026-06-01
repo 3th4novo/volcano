@@ -43,7 +43,7 @@
               },
               {
                 "color": "red",
-                "value": 70
+                "value": 80
               }
             ]
           },
@@ -102,7 +102,7 @@
               },
               {
                 "color": "red",
-                "value": 70
+                "value": 80
               }
             ]
           },
@@ -400,7 +400,7 @@
               },
               {
                 "color": "red",
-                "value": 70
+                "value": 80
               }
             ]
           },
@@ -517,8 +517,8 @@
       {
         "current": {
           "selected": true,
-          "text": "70",
-          "value": "70"
+          "text": "80",
+          "value": "80"
         },
         "hide": 0,
         "label": "Hotspot threshold",
@@ -526,11 +526,11 @@
         "options": [
           {
             "selected": true,
-            "text": "70",
-            "value": "70"
+            "text": "80",
+            "value": "80"
           }
         ],
-        "query": "70",
+        "query": "80",
         "type": "textbox"
       }
     ]
