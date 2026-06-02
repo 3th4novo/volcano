@@ -312,11 +312,16 @@ cce-loadtest/dashboards/grafana-cce-loadtest.json
 推荐同时打开这些面板：
 
 - Per-node total memory waterline
+- Node CPU usage - `$node`
+- Node memory usage - `$node`
 - Load-test memory waterline
+- Load-test memory usage
 - Load-test CPU cores
 - Per-node hotspot probability
 - Cluster hotspot probability
 - Memory waterline skew
+- Peak CPU waterline, last 30m
+- Peak memory waterline, last 30m
 
 观察窗口建议：
 
