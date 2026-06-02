@@ -290,16 +290,28 @@ sum by (node) (rate(container_cpu_usage_seconds_total{namespace="default",pod=~"
 export HOTSPOT_MEMORY_THRESHOLD=80
 ```
 
-单节点过去 30 分钟热点概率：
+单节点过去 10 分钟热点概率：
 
 ```promql
-100 * avg_over_time(((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool 80)[30m:30s])
+100 * avg_over_time(((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool 80)[10m:30s])
 ```
 
-集群任一节点出现热点的概率：
+集群任一节点过去 10 分钟出现热点的概率：
 
 ```promql
-100 * avg_over_time((max(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool 80)[30m:30s])
+100 * avg_over_time((max(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool 80)[10m:30s])
+```
+
+单节点过去 10 分钟空闲概率，空闲定义为节点真实内存利用率低于 `20%`：
+
+```promql
+100 * avg_over_time(((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) < bool 20)[10m:30s])
+```
+
+集群过去 10 分钟出现空闲节点的概率：
+
+```promql
+100 * avg_over_time((min(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) < bool 20)[10m:30s])
 ```
 
 节点间水位离散度：
@@ -345,16 +357,18 @@ cce-loadtest/dashboards/grafana-cce-loadtest.json
 - Load-test memory waterline
 - Load-test memory usage
 - Load-test CPU cores
-- Per-node hotspot probability
-- Cluster hotspot probability
+- Per-node hotspot probability, last 10m
+- Cluster hotspot probability, last 10m
+- Per-node idle probability, last 10m
+- Cluster idle-node probability, last 10m
 - Memory waterline skew
-- Peak CPU waterline, last 30m
-- Peak memory waterline, last 30m
+- Peak CPU waterline, last 10m
+- Peak memory waterline, last 10m
 
 观察窗口建议：
 
-- 批量下发：`Last 15 minutes`
-- 滚动升级：`Last 30 minutes`
+- 批量下发：`Last 10 minutes`
+- 滚动升级：`Last 10 minutes`
 - Prometheus scrape interval 较长时，窗口可放大到 `1 hour`
 
 ## 9. 清理

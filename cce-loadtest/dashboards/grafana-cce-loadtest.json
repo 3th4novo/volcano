@@ -248,12 +248,12 @@
       },
       "targets": [
         {
-          "expr": "100 * avg_over_time(((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool $threshold)[30m:30s])",
+          "expr": "100 * avg_over_time(((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool $threshold)[10m:30s])",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
-      "title": "Per-node hotspot probability, last 30m",
+      "title": "Per-node hotspot probability, last 10m",
       "type": "timeseries"
     },
     {
@@ -307,12 +307,130 @@
       },
       "targets": [
         {
-          "expr": "100 * avg_over_time((max(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool $threshold)[30m:30s])",
+          "expr": "100 * avg_over_time((max(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool $threshold)[10m:30s])",
           "legendFormat": "cluster",
           "refId": "A"
         }
       ],
-      "title": "Cluster hotspot probability",
+      "title": "Cluster hotspot probability, last 10m",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 25
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 16
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * avg_over_time(((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) < bool 20)[10m:30s])",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Per-node idle probability, last 10m",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 25
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "100 * avg_over_time((min(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) < bool 20)[10m:30s])",
+          "legendFormat": "cluster",
+          "refId": "A"
+        }
+      ],
+      "title": "Cluster idle-node probability, last 10m",
       "type": "stat"
     },
     {
@@ -347,8 +465,8 @@
       "gridPos": {
         "h": 6,
         "w": 8,
-        "x": 8,
-        "y": 16
+        "x": 0,
+        "y": 22
       },
       "id": 6,
       "options": {
@@ -411,8 +529,8 @@
       "gridPos": {
         "h": 6,
         "w": 8,
-        "x": 16,
-        "y": 16
+        "x": 8,
+        "y": 22
       },
       "id": 7,
       "options": {
@@ -429,12 +547,12 @@
       },
       "targets": [
         {
-          "expr": "max_over_time((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))[30m:30s])",
+          "expr": "max_over_time((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))[10m:30s])",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
-      "title": "Peak memory waterline, last 30m",
+      "title": "Peak memory waterline, last 10m",
       "type": "timeseries"
     },
     {
@@ -471,7 +589,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 28
       },
       "id": 8,
       "maxPerRow": 2,
@@ -533,7 +651,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 30
+        "y": 36
       },
       "id": 9,
       "maxPerRow": 2,
@@ -594,7 +712,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 38
+        "y": 44
       },
       "id": 10,
       "options": {
@@ -653,7 +771,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 38
+        "y": 44
       },
       "id": 11,
       "options": {
@@ -670,12 +788,12 @@
       },
       "targets": [
         {
-          "expr": "max_over_time((100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[1m]))))[30m:30s])",
+          "expr": "max_over_time((100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[1m]))))[10m:30s])",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
-      "title": "Peak CPU waterline, last 30m",
+      "title": "Peak CPU waterline, last 10m",
       "type": "timeseries"
     }
   ],
@@ -800,7 +918,7 @@
     ]
   },
   "time": {
-    "from": "now-30m",
+    "from": "now-10m",
     "to": "now"
   },
   "timepicker": {},
