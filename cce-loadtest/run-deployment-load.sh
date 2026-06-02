@@ -21,6 +21,13 @@ TARGET_CPU_MILLICORES="${TARGET_CPU_MILLICORES:-200}"
 CPU_STEP_MILLICORES="${CPU_STEP_MILLICORES:-10}"
 RAMP_SECONDS="${RAMP_SECONDS:-20}"
 HOLD_SECONDS="${HOLD_SECONDS:-86400}"
+LOAD_PROFILE="${LOAD_PROFILE:-linear}"
+JAVA_PEAK_MEMORY_MI="${JAVA_PEAK_MEMORY_MI:-580}"
+JAVA_PEAK_CPU_MILLICORES="${JAVA_PEAK_CPU_MILLICORES:-240}"
+JAVA_PEAK_HOLD_SECONDS="${JAVA_PEAK_HOLD_SECONDS:-5}"
+JAVA_DROP_SECONDS="${JAVA_DROP_SECONDS:-10}"
+JAVA_STEADY_MEMORY_MI="${JAVA_STEADY_MEMORY_MI:-500}"
+JAVA_STEADY_CPU_MILLICORES="${JAVA_STEADY_CPU_MILLICORES:-200}"
 
 ROLLING_MAX_SURGE="${ROLLING_MAX_SURGE:-0}"
 ROLLING_MAX_UNAVAILABLE="${ROLLING_MAX_UNAVAILABLE:-5}"
@@ -50,6 +57,7 @@ Common environment variables:
   IMAGE_PULL_SECRET          default: ${IMAGE_PULL_SECRET}
   SWR_VERSION                default: ${SWR_VERSION}
   REPLICAS                   default: ${REPLICAS}
+  LOAD_PROFILE               linear|java-spike, default: ${LOAD_PROFILE}
   PROMETHEUS_URL             optional, for observe queries
 EOF
 }
@@ -114,6 +122,13 @@ data:
     CPU_STEP_MILLICORES="${CPU_STEP_MILLICORES:-10}"
     RAMP_SECONDS="${RAMP_SECONDS:-20}"
     HOLD_SECONDS="${HOLD_SECONDS:-86400}"
+    LOAD_PROFILE="${LOAD_PROFILE:-linear}"
+    JAVA_PEAK_MEMORY_MI="${JAVA_PEAK_MEMORY_MI:-580}"
+    JAVA_PEAK_CPU_MILLICORES="${JAVA_PEAK_CPU_MILLICORES:-240}"
+    JAVA_PEAK_HOLD_SECONDS="${JAVA_PEAK_HOLD_SECONDS:-5}"
+    JAVA_DROP_SECONDS="${JAVA_DROP_SECONDS:-10}"
+    JAVA_STEADY_MEMORY_MI="${JAVA_STEADY_MEMORY_MI:-500}"
+    JAVA_STEADY_CPU_MILLICORES="${JAVA_STEADY_CPU_MILLICORES:-200}"
 
     MEM_PID=""
     CPU_PID=""
@@ -158,28 +173,72 @@ data:
       CPU_PID="\$!"
     }
 
-    echo "resource ramp: memory 0 -> \${TARGET_MEMORY_MI}Mi, cpu 0 -> \${TARGET_CPU_MILLICORES}m, seconds=\${RAMP_SECONDS}"
-
-    i=1
-    while [ "\${i}" -le "\${RAMP_SECONDS}" ]; do
-      mem_mi=\$((MEMORY_STEP_MI * i))
-      cpu_millicores=\$((CPU_STEP_MILLICORES * i))
-      [ "\${mem_mi}" -gt "\${TARGET_MEMORY_MI}" ] && mem_mi="\${TARGET_MEMORY_MI}"
-      [ "\${cpu_millicores}" -gt "\${TARGET_CPU_MILLICORES}" ] && cpu_millicores="\${TARGET_CPU_MILLICORES}"
-
+    ensure_stress() {
       if ! command -v stress >/dev/null 2>&1; then
         echo "stress is not available in the image" >&2
         exit 1
       fi
-      start_stress "\${mem_mi}" "\${cpu_millicores}"
+    }
 
-      echo "ramp step=\${i} memory=\${mem_mi}Mi cpu=\${cpu_millicores}m"
-      i=\$((i + 1))
-      sleep 1
-    done
+    run_linear_profile() {
+      echo "linear profile: memory 0 -> \${TARGET_MEMORY_MI}Mi, cpu 0 -> \${TARGET_CPU_MILLICORES}m, seconds=\${RAMP_SECONDS}"
 
-    echo "holding memory=\${TARGET_MEMORY_MI}Mi cpu=\${TARGET_CPU_MILLICORES}m for \${HOLD_SECONDS}s"
-    wait
+      i=1
+      while [ "\${i}" -le "\${RAMP_SECONDS}" ]; do
+        mem_mi=\$((MEMORY_STEP_MI * i))
+        cpu_millicores=\$((CPU_STEP_MILLICORES * i))
+        [ "\${mem_mi}" -gt "\${TARGET_MEMORY_MI}" ] && mem_mi="\${TARGET_MEMORY_MI}"
+        [ "\${cpu_millicores}" -gt "\${TARGET_CPU_MILLICORES}" ] && cpu_millicores="\${TARGET_CPU_MILLICORES}"
+
+        start_stress "\${mem_mi}" "\${cpu_millicores}"
+
+        echo "linear step=\${i} memory=\${mem_mi}Mi cpu=\${cpu_millicores}m"
+        i=\$((i + 1))
+        sleep 1
+      done
+
+      echo "holding memory=\${TARGET_MEMORY_MI}Mi cpu=\${TARGET_CPU_MILLICORES}m for \${HOLD_SECONDS}s"
+      wait
+    }
+
+    run_java_spike_profile() {
+      echo "java-spike profile: peak \${JAVA_PEAK_MEMORY_MI}Mi/\${JAVA_PEAK_CPU_MILLICORES}m, hold \${JAVA_PEAK_HOLD_SECONDS}s, drop \${JAVA_DROP_SECONDS}s, steady \${JAVA_STEADY_MEMORY_MI}Mi/\${JAVA_STEADY_CPU_MILLICORES}m"
+
+      start_stress "\${JAVA_PEAK_MEMORY_MI}" "\${JAVA_PEAK_CPU_MILLICORES}"
+      sleep "\${JAVA_PEAK_HOLD_SECONDS}"
+
+      i=1
+      while [ "\${i}" -le "\${JAVA_DROP_SECONDS}" ]; do
+        mem_delta=\$((JAVA_PEAK_MEMORY_MI - JAVA_STEADY_MEMORY_MI))
+        cpu_delta=\$((JAVA_PEAK_CPU_MILLICORES - JAVA_STEADY_CPU_MILLICORES))
+        mem_mi=\$((JAVA_PEAK_MEMORY_MI - (mem_delta * i / JAVA_DROP_SECONDS)))
+        cpu_millicores=\$((JAVA_PEAK_CPU_MILLICORES - (cpu_delta * i / JAVA_DROP_SECONDS)))
+
+        start_stress "\${mem_mi}" "\${cpu_millicores}"
+
+        echo "java-spike drop step=\${i} memory=\${mem_mi}Mi cpu=\${cpu_millicores}m"
+        i=\$((i + 1))
+        sleep 1
+      done
+
+      start_stress "\${JAVA_STEADY_MEMORY_MI}" "\${JAVA_STEADY_CPU_MILLICORES}"
+      echo "holding memory=\${JAVA_STEADY_MEMORY_MI}Mi cpu=\${JAVA_STEADY_CPU_MILLICORES}m for \${HOLD_SECONDS}s"
+      wait
+    }
+
+    ensure_stress
+    case "\${LOAD_PROFILE}" in
+      linear)
+        run_linear_profile
+        ;;
+      java-spike)
+        run_java_spike_profile
+        ;;
+      *)
+        echo "unsupported LOAD_PROFILE=\${LOAD_PROFILE}; expected linear or java-spike" >&2
+        exit 2
+        ;;
+    esac
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -232,6 +291,20 @@ $(render_image_pull_secrets)
           value: "${RAMP_SECONDS}"
         - name: HOLD_SECONDS
           value: "${HOLD_SECONDS}"
+        - name: LOAD_PROFILE
+          value: "${LOAD_PROFILE}"
+        - name: JAVA_PEAK_MEMORY_MI
+          value: "${JAVA_PEAK_MEMORY_MI}"
+        - name: JAVA_PEAK_CPU_MILLICORES
+          value: "${JAVA_PEAK_CPU_MILLICORES}"
+        - name: JAVA_PEAK_HOLD_SECONDS
+          value: "${JAVA_PEAK_HOLD_SECONDS}"
+        - name: JAVA_DROP_SECONDS
+          value: "${JAVA_DROP_SECONDS}"
+        - name: JAVA_STEADY_MEMORY_MI
+          value: "${JAVA_STEADY_MEMORY_MI}"
+        - name: JAVA_STEADY_CPU_MILLICORES
+          value: "${JAVA_STEADY_CPU_MILLICORES}"
         resources:
           requests:
             cpu: ${CPU_REQUEST}

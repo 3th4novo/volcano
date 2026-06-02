@@ -3,7 +3,7 @@
 这个目录用于在华为云 CCE 的真实 Kubernetes 集群上模拟：
 
 - 批量下发可配置副本数的 Deployment，默认 10 副本
-- 每个 Pod 从 0 线性升压到 `500Mi` 内存和 `200m` CPU
+- 每个 Pod 支持两种可配置加压曲线：`linear` 线性升压，`java-spike` 启动陡增后回落到平稳水位
 - 每个 Pod 资源声明为 `cpu request=200m, limit=250m`，`memory request=500Mi, limit=600Mi`
 - 滚动升级场景，包括稳态升级和 surge 压力升级
 - 通过 Prometheus / Prometheus Adapter 观测每个节点实时水位和热点概率
@@ -168,11 +168,39 @@ REPLICAS=58 ./run-deployment-load.sh apply
 kubectl -n default get pods -o wide
 ```
 
-负载曲线：
+默认负载曲线为 `LOAD_PROFILE=linear`：
 
 - 第 1 秒：`25Mi` 内存，约 `10m` CPU
 - 第 20 秒：`500Mi` 内存，约 `200m` CPU
 - 20 秒后保持最终压力水位
+
+也可以切换成 Java 类业务启动曲线：
+
+```bash
+LOAD_PROFILE=java-spike ./run-deployment-load.sh apply
+./run-deployment-load.sh wait
+```
+
+`java-spike` 默认曲线：
+
+- Pod 启动后立即升到峰值：`580Mi` 内存，约 `240m` CPU
+- 峰值保持 `5` 秒
+- 随后用 `10` 秒回落到平稳水位：`500Mi` 内存，约 `200m` CPU
+- 回落后持续保持平稳水位
+
+可配置参数：
+
+```bash
+LOAD_PROFILE=java-spike
+JAVA_PEAK_MEMORY_MI=580
+JAVA_PEAK_CPU_MILLICORES=240
+JAVA_PEAK_HOLD_SECONDS=5
+JAVA_DROP_SECONDS=10
+JAVA_STEADY_MEMORY_MI=500
+JAVA_STEADY_CPU_MILLICORES=200
+```
+
+默认峰值留在 `memory limit=600Mi` 和 `cpu limit=250m` 以内，避免测试负载因为启动峰值直接 OOMKilled 或被过度限流。如果调整峰值，建议内存峰值不要超过 `590Mi`，CPU 峰值不要超过 `245m`。
 
 ## 5. 滚动升级
 
