@@ -3,7 +3,7 @@
 这个目录用于在华为云 CCE 的真实 Kubernetes 集群上模拟：
 
 - 批量下发可配置副本数的 Deployment，默认 10 副本
-- 每个 Pod 支持两种可配置加压曲线：`linear` 线性升压，`java-spike` 启动陡增后回落到平稳水位
+- 每个 Pod 支持三种可配置加压曲线：`linear` 线性升压，`java-spike` 启动陡增后回落到平稳水位，`request-fixed` 启动后按 request 值直接加压并保持
 - 每个 Pod 资源声明为 `cpu request=200m, limit=250m`，`memory request=500Mi, limit=600Mi`
 - 滚动升级场景，包括稳态升级和 surge 压力升级
 - 通过 Prometheus / Prometheus Adapter 观测每个节点实时水位和热点概率
@@ -173,6 +173,15 @@ kubectl -n default get pods -o wide
 - 第 1 秒：`25Mi` 内存，约 `10m` CPU
 - 第 20 秒：`500Mi` 内存，约 `200m` CPU
 - 20 秒后保持最终压力水位
+
+如果需要 Pod 启动后立即达到 request 对应的压力水位，可以使用 `request-fixed`：
+
+```bash
+LOAD_PROFILE=request-fixed ./run-deployment-load.sh apply
+./run-deployment-load.sh wait
+```
+
+`request-fixed` 会根据当前 Pod 的 `CPU_REQUEST` 和 `MEMORY_REQUEST` 生成压力值。默认规格下，每个 Pod 启动后直接施加 `500Mi` 内存和约 `200m` CPU，并持续保持。
 
 也可以切换成 Java 类业务启动曲线：
 

@@ -82,7 +82,7 @@ Common environment variables:
   IMAGE_PULL_SECRET          default: ${IMAGE_PULL_SECRET}
   SWR_VERSION                default: ${SWR_VERSION}
   REPLICAS                   default: ${REPLICAS}
-  LOAD_PROFILE               linear|java-spike, default: ${LOAD_PROFILE}
+  LOAD_PROFILE               linear|java-spike|request-fixed, default: ${LOAD_PROFILE}
   ROLLING_MAX_SURGE          default Deployment maxSurge: ${ROLLING_MAX_SURGE}
   ROLLING_MAX_UNAVAILABLE    default Deployment maxUnavailable: ${ROLLING_MAX_UNAVAILABLE}
   ROLLING_SURGE_MAX_SURGE    rollout --surge maxSurge: ${ROLLING_SURGE_MAX_SURGE}
@@ -123,6 +123,30 @@ require_cmd() {
   }
 }
 
+cpu_request_to_millicores() {
+  local value="$1"
+  if [[ "${value}" =~ ^([0-9]+)m$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+  elif [[ "${value}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    awk -v value="${value}" 'BEGIN { printf "%.0f", value * 1000 }'
+  else
+    echo "CPU_REQUEST must be millicores like 200m or cores like 1 or 0.2" >&2
+    exit 1
+  fi
+}
+
+memory_request_to_mi() {
+  local value="$1"
+  if [[ "${value}" =~ ^([0-9]+)Mi$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+  elif [[ "${value}" =~ ^([0-9]+)Gi$ ]]; then
+    printf '%s' "$((BASH_REMATCH[1] * 1024))"
+  else
+    echo "MEMORY_REQUEST must use Mi or Gi, for example 500Mi or 1Gi" >&2
+    exit 1
+  fi
+}
+
 render_namespace() {
   if [[ "${NAMESPACE}" != "default" ]]; then
     cat <<EOF
@@ -149,6 +173,9 @@ EOF
 render_manifest() {
   validate_int_or_percent "ROLLING_MAX_SURGE" "${ROLLING_MAX_SURGE}"
   validate_int_or_percent "ROLLING_MAX_UNAVAILABLE" "${ROLLING_MAX_UNAVAILABLE}"
+  local request_memory_mi request_cpu_millicores
+  request_memory_mi="$(memory_request_to_mi "${MEMORY_REQUEST}")"
+  request_cpu_millicores="$(cpu_request_to_millicores "${CPU_REQUEST}")"
   render_namespace
   cat <<EOF
 apiVersion: scheduling.volcano.sh/v1beta1
@@ -179,6 +206,8 @@ data:
     RAMP_SECONDS="${RAMP_SECONDS:-20}"
     HOLD_SECONDS="${HOLD_SECONDS:-86400}"
     LOAD_PROFILE="${LOAD_PROFILE:-linear}"
+    REQUEST_MEMORY_MI="${request_memory_mi}"
+    REQUEST_CPU_MILLICORES="${request_cpu_millicores}"
     JAVA_PEAK_MEMORY_MI="${JAVA_PEAK_MEMORY_MI:-580}"
     JAVA_PEAK_CPU_MILLICORES="${JAVA_PEAK_CPU_MILLICORES:-240}"
     JAVA_PEAK_HOLD_SECONDS="${JAVA_PEAK_HOLD_SECONDS:-5}"
@@ -282,6 +311,12 @@ data:
       wait
     }
 
+    run_request_fixed_profile() {
+      echo "request-fixed profile: memory=\${REQUEST_MEMORY_MI}Mi cpu=\${REQUEST_CPU_MILLICORES}m"
+      start_stress "\${REQUEST_MEMORY_MI}" "\${REQUEST_CPU_MILLICORES}"
+      wait
+    }
+
     ensure_stress
     case "\${LOAD_PROFILE}" in
       linear)
@@ -290,8 +325,11 @@ data:
       java-spike)
         run_java_spike_profile
         ;;
+      request-fixed)
+        run_request_fixed_profile
+        ;;
       *)
-        echo "unsupported LOAD_PROFILE=\${LOAD_PROFILE}; expected linear or java-spike" >&2
+        echo "unsupported LOAD_PROFILE=\${LOAD_PROFILE}; expected linear, java-spike, or request-fixed" >&2
         exit 2
         ;;
     esac
@@ -349,6 +387,10 @@ $(render_image_pull_secrets)
           value: "${HOLD_SECONDS}"
         - name: LOAD_PROFILE
           value: "${LOAD_PROFILE}"
+        - name: REQUEST_MEMORY_MI
+          value: "${request_memory_mi}"
+        - name: REQUEST_CPU_MILLICORES
+          value: "${request_cpu_millicores}"
         - name: JAVA_PEAK_MEMORY_MI
           value: "${JAVA_PEAK_MEMORY_MI}"
         - name: JAVA_PEAK_CPU_MILLICORES
