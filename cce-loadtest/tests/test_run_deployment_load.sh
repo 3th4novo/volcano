@@ -94,4 +94,38 @@ rollout_log="$(cat "${kubectl_log}")"
 assert_contains "${rollout_log}" '"maxSurge":"25%"'
 assert_contains "${rollout_log}" '"maxUnavailable":0'
 
+skewed_manifest="$(${SCRIPT} render-skewed)"
+assert_contains "${skewed_manifest}" "name: cce-skewed-1"
+assert_contains "${skewed_manifest}" "name: cce-skewed-2"
+assert_contains "${skewed_manifest}" "name: cce-skewed-3"
+assert_contains "${skewed_manifest}" "replicas: 10"
+assert_contains "${skewed_manifest}" "replicas: 6"
+assert_contains "${skewed_manifest}" "replicas: 2"
+assert_contains "${skewed_manifest}" "key: kubernetes.io/hostname"
+assert_contains "${skewed_manifest}" "- 192.168.9.134"
+assert_contains "${skewed_manifest}" "- 192.168.9.133"
+assert_contains "${skewed_manifest}" "- 192.168.9.182"
+assert_contains "${skewed_manifest}" "FIXED_MEMORY_MI=\"500\""
+assert_contains "${skewed_manifest}" "FIXED_CPU_MILLICORES=\"200\""
+assert_contains "${skewed_manifest}" "stress --vm 1 --vm-bytes \"\${FIXED_MEMORY_MI}M\""
+assert_contains "${skewed_manifest}" "schedulerName: volcano"
+assert_contains "${skewed_manifest}" "scheduling.volcano.sh/queue-name: cce-loadtest"
+assert_contains "${skewed_manifest}" "memory: 500Mi"
+assert_contains "${skewed_manifest}" "cpu: 200m"
+
+[[ "${skewed_manifest}" != *"key: metadata.name"* ]] || fail "skewed node affinity should use kubernetes.io/hostname"
+[[ "${skewed_manifest}" != *"LOAD_PROFILE"* ]] || fail "skewed deployments should not render ramp load profile env"
+
+: > "${kubectl_log}"
+KUBECTL_LOG="${kubectl_log}" KUBECTL="${fake_kubectl}" WAIT_TIMEOUT=1s "${SCRIPT}" rollout-skewed --surge maxSurge=25% maxUnavailable=0
+skewed_rollout_log="$(cat "${kubectl_log}")"
+assert_contains "${skewed_rollout_log}" "patch deployment cce-skewed-1"
+assert_contains "${skewed_rollout_log}" "patch deployment cce-skewed-2"
+assert_contains "${skewed_rollout_log}" "patch deployment cce-skewed-3"
+assert_contains "${skewed_rollout_log}" '"maxSurge":"25%"'
+assert_contains "${skewed_rollout_log}" '"affinity":null'
+assert_contains "${skewed_rollout_log}" "rollout status deployment/cce-skewed-1"
+assert_contains "${skewed_rollout_log}" "rollout status deployment/cce-skewed-2"
+assert_contains "${skewed_rollout_log}" "rollout status deployment/cce-skewed-3"
+
 echo "PASS: run-deployment-load.sh behavior"

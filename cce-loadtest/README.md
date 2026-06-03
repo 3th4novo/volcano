@@ -258,7 +258,65 @@ ROLLING_MAX_SURGE=25% ROLLING_MAX_UNAVAILABLE=0 ./run-deployment-load.sh apply
 
 这个模式更容易暴露“新 Pod 尚未被 Prometheus 采到时，调度是否倾向局部热点”的问题。对比 Koordinator 时，建议使用 `LOAD_PROFILE=java-spike` 和 `maxSurge=25%` 放大启动尖峰和指标滞后窗口。
 
-## 6. 实时水位观测
+## 6. 构造不均匀三 Deployment 场景
+
+这个模式用于先人为制造三个不同水位的热点节点，再通过滚动升级删除节点亲和，让新 Pod 重新交给调度器自由分布。
+
+默认节点和副本数：
+
+| Deployment | 目标节点 `kubernetes.io/hostname` | 副本数 | 新增内存压力 |
+|---|---|---:|---:|
+| `cce-skewed-1` | `192.168.9.134` | `10` | 约 `61%` |
+| `cce-skewed-2` | `192.168.9.133` | `6` | 约 `36.6%` |
+| `cce-skewed-3` | `192.168.9.182` | `2` | 约 `12.2%` |
+| 空闲观察节点 | `192.168.9.47` | `0` | `0%` |
+
+计算口径：单 Pod 内存压力为 `500Mi`，4U8Gi 节点上约等于 `500 / 8192 = 6.1%`。如果节点已有 DaemonSet 占用约 `10%`，三个目标节点初始真实水位约为 `71%`、`46.6%`、`22.2%`，第四个节点约 `10%`。
+
+初始下发：
+
+```bash
+SKEWED_NODE_1=192.168.9.134 SKEWED_REPLICAS_1=10 \
+SKEWED_NODE_2=192.168.9.133 SKEWED_REPLICAS_2=6 \
+SKEWED_NODE_3=192.168.9.182 SKEWED_REPLICAS_3=2 \
+./run-deployment-load.sh apply-skewed
+./run-deployment-load.sh wait-skewed
+```
+
+初始下发时，三个 Deployment 都会带强制节点亲和：
+
+```yaml
+key: kubernetes.io/hostname
+operator: In
+```
+
+Skewed 模式不使用 `linear` 或 `java-spike`。每个 Pod 启动后直接施加固定压力并保持：
+
+- 内存：`500Mi`
+- CPU：`200m`
+
+触发三组 Deployment 同时滚动升级，并删除新 Pod 模板里的节点亲和：
+
+```bash
+./run-deployment-load.sh rollout-skewed --surge maxSurge=25% maxUnavailable=0
+```
+
+滚动升级时脚本会：
+
+- patch 三个 Deployment 的 RollingUpdate 策略。
+- patch 三个 Deployment 的 Pod template，设置 `affinity: null`。
+- 更新 `loadtest.volcano.sh/rollout-id`，触发新 ReplicaSet。
+- 等待三个 Deployment 全部完成 rollout。
+
+清理：
+
+```bash
+./run-deployment-load.sh cleanup-skewed
+```
+
+预期现象：初始阶段 Pod 明显集中在前三个节点；滚动升级后，新 ReplicaSet 的 Pod 不再指定节点，应观察调度器是否把三个 Deployment 的副本重新打散到四个节点上。
+
+## 7. 实时水位观测
 
 CLI 快速观测：
 
@@ -306,7 +364,7 @@ sum by (node) (rate(container_cpu_usage_seconds_total{namespace="default",pod=~"
 
 每节点本次测试负载贡献的 CPU core 数。
 
-## 7. 热点出现概率
+## 8. 热点出现概率
 
 当前热点定义为节点真实内存利用率超过 `80%`：
 
@@ -358,7 +416,7 @@ max(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) - m
 - `cluster hotspot probability` 更低。
 - 节点真实内存水位更接近目标水位，且 8Gi 节点超过 `80%` 的时间占比更低。
 
-## 8. Grafana 可视化
+## 9. Grafana 可视化
 
 导入面板：
 
@@ -395,7 +453,7 @@ cce-loadtest/dashboards/grafana-cce-loadtest.json
 - 滚动升级：`Last 10 minutes`
 - Prometheus scrape interval 较长时，窗口可放大到 `1 hour`
 
-## 9. 清理
+## 10. 清理
 
 ```bash
 ./run-deployment-load.sh cleanup

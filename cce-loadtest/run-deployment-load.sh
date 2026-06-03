@@ -42,6 +42,15 @@ if [[ -z "${ROLLING_SURGE_MAX_SURGE}" ]]; then
   fi
 fi
 ROLLING_SURGE_MAX_UNAVAILABLE="${ROLLING_SURGE_MAX_UNAVAILABLE:-0}"
+SKEWED_DEPLOYMENT_PREFIX="${SKEWED_DEPLOYMENT_PREFIX:-cce-skewed}"
+SKEWED_NODE_1="${SKEWED_NODE_1:-192.168.9.134}"
+SKEWED_NODE_2="${SKEWED_NODE_2:-192.168.9.133}"
+SKEWED_NODE_3="${SKEWED_NODE_3:-192.168.9.182}"
+SKEWED_REPLICAS_1="${SKEWED_REPLICAS_1:-10}"
+SKEWED_REPLICAS_2="${SKEWED_REPLICAS_2:-6}"
+SKEWED_REPLICAS_3="${SKEWED_REPLICAS_3:-2}"
+SKEWED_MEMORY_MI="${SKEWED_MEMORY_MI:-500}"
+SKEWED_CPU_MILLICORES="${SKEWED_CPU_MILLICORES:-200}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-10m}"
 KUBECTL="${KUBECTL:-kubectl}"
 HOTSPOT_MEMORY_THRESHOLD="${HOTSPOT_MEMORY_THRESHOLD:-80}"
@@ -51,14 +60,19 @@ usage() {
   cat <<EOF
 Usage:
   $(basename "$0") render
+  $(basename "$0") render-skewed
   $(basename "$0") apply
+  $(basename "$0") apply-skewed
   $(basename "$0") wait
+  $(basename "$0") wait-skewed
   $(basename "$0") rollout [--safe|--surge] [maxSurge=25%] [maxUnavailable=0]
+  $(basename "$0") rollout-skewed [--safe|--surge] [maxSurge=25%] [maxUnavailable=0]
   $(basename "$0") observe
   $(basename "$0") watch-waterline
   $(basename "$0") check-adapter [--print-only]
   $(basename "$0") promql
   $(basename "$0") cleanup
+  $(basename "$0") cleanup-skewed
 
 Common environment variables:
   IMAGE                      resource_consumer image, default: ${IMAGE}
@@ -73,6 +87,12 @@ Common environment variables:
   ROLLING_MAX_UNAVAILABLE    default Deployment maxUnavailable: ${ROLLING_MAX_UNAVAILABLE}
   ROLLING_SURGE_MAX_SURGE    rollout --surge maxSurge: ${ROLLING_SURGE_MAX_SURGE}
   ROLLING_SURGE_MAX_UNAVAILABLE rollout --surge maxUnavailable: ${ROLLING_SURGE_MAX_UNAVAILABLE}
+  SKEWED_NODE_1              default: ${SKEWED_NODE_1}
+  SKEWED_NODE_2              default: ${SKEWED_NODE_2}
+  SKEWED_NODE_3              default: ${SKEWED_NODE_3}
+  SKEWED_REPLICAS_1          default: ${SKEWED_REPLICAS_1}
+  SKEWED_REPLICAS_2          default: ${SKEWED_REPLICAS_2}
+  SKEWED_REPLICAS_3          default: ${SKEWED_REPLICAS_3}
   PROMETHEUS_URL             optional, for observe queries
 EOF
 }
@@ -360,9 +380,192 @@ $(render_image_pull_secrets)
 EOF
 }
 
+skewed_deployment_name() {
+  printf '%s-%s' "${SKEWED_DEPLOYMENT_PREFIX}" "$1"
+}
+
+render_skewed_scripts_configmap() {
+  cat <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${SKEWED_DEPLOYMENT_PREFIX}-scripts
+  namespace: ${NAMESPACE}
+data:
+  fixed-load.sh: |
+    #!/bin/sh
+    set -eu
+
+    FIXED_MEMORY_MI="${SKEWED_MEMORY_MI}"
+    FIXED_CPU_MILLICORES="${SKEWED_CPU_MILLICORES}"
+    HOLD_SECONDS="${HOLD_SECONDS:-86400}"
+
+    MEM_PID=""
+    CPU_PID=""
+
+    cleanup() {
+      [ -n "\${MEM_PID}" ] && kill "\${MEM_PID}" 2>/dev/null || true
+      [ -n "\${CPU_PID}" ] && kill "\${CPU_PID}" 2>/dev/null || true
+    }
+    trap cleanup TERM INT EXIT
+
+    now_ms() {
+      ts="\$(date +%s%3N 2>/dev/null || true)"
+      case "\${ts}" in
+        ""|*[!0-9]*) echo "\$(date +%s)000" ;;
+        *) echo "\${ts}" ;;
+      esac
+    }
+
+    cpu_loop() {
+      millicores="\$1"
+      [ "\${millicores}" -lt 1 ] && millicores=1
+      [ "\${millicores}" -gt 1000 ] && millicores=1000
+      idle_ms=\$((1000 - millicores))
+      while true; do
+        start="\$(now_ms)"
+        end=\$((start + millicores))
+        while [ "\$(now_ms)" -lt "\${end}" ]; do :; done
+        if [ "\${idle_ms}" -gt 0 ]; then
+          sleep "0.\$(printf '%03d' "\${idle_ms}")"
+        fi
+      done
+    }
+
+    if ! command -v stress >/dev/null 2>&1; then
+      echo "stress is not available in the image" >&2
+      exit 1
+    fi
+
+    echo "fixed profile: memory=\${FIXED_MEMORY_MI}Mi cpu=\${FIXED_CPU_MILLICORES}m"
+    stress --vm 1 --vm-bytes "\${FIXED_MEMORY_MI}M" --vm-keep --timeout "\${HOLD_SECONDS}" &
+    MEM_PID="\$!"
+    cpu_loop "\${FIXED_CPU_MILLICORES}" &
+    CPU_PID="\$!"
+    wait
+EOF
+}
+
+render_skewed_deployment() {
+  idx="$1"
+  node_var="SKEWED_NODE_${idx}"
+  replicas_var="SKEWED_REPLICAS_${idx}"
+  node_name="${!node_var}"
+  replicas="${!replicas_var}"
+  deployment_name="$(skewed_deployment_name "${idx}")"
+
+  if [[ -z "${node_name}" ]]; then
+    echo "${node_var} must not be empty" >&2
+    exit 1
+  fi
+  if [[ ! "${replicas}" =~ ^[0-9]+$ ]]; then
+    echo "${replicas_var} must be a non-negative integer" >&2
+    exit 1
+  fi
+
+  cat <<EOF
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${deployment_name}
+  namespace: ${NAMESPACE}
+  annotations:
+    description: ""
+    workload.cce.io/swr-version: '[{"version":"${SWR_VERSION}"}]'
+  labels:
+    app.kubernetes.io/name: ${deployment_name}
+    loadtest.volcano.sh/mode: skewed
+    loadtest.volcano.sh/group: ${SKEWED_DEPLOYMENT_PREFIX}
+spec:
+  replicas: ${replicas}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: ${ROLLING_MAX_SURGE}
+      maxUnavailable: ${ROLLING_MAX_UNAVAILABLE}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ${deployment_name}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ${deployment_name}
+        loadtest.volcano.sh/mode: skewed
+        loadtest.volcano.sh/group: ${SKEWED_DEPLOYMENT_PREFIX}
+      annotations:
+        scheduling.volcano.sh/queue-name: ${QUEUE_NAME}
+        loadtest.volcano.sh/rollout-id: "initial"
+    spec:
+      schedulerName: volcano
+      terminationGracePeriodSeconds: 5
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - ${node_name}
+$(render_image_pull_secrets)
+      containers:
+      - name: ${CONTAINER_NAME}
+        image: ${IMAGE}
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/sh
+        - /scripts/fixed-load.sh
+        resources:
+          requests:
+            cpu: ${CPU_REQUEST}
+            memory: ${MEMORY_REQUEST}
+          limits:
+            cpu: ${CPU_LIMIT}
+            memory: ${MEMORY_LIMIT}
+        volumeMounts:
+        - name: load-scripts
+          mountPath: /scripts
+          readOnly: true
+      volumes:
+      - name: load-scripts
+        configMap:
+          name: ${SKEWED_DEPLOYMENT_PREFIX}-scripts
+          defaultMode: 0755
+EOF
+}
+
+render_skewed_manifest() {
+  validate_int_or_percent "ROLLING_MAX_SURGE" "${ROLLING_MAX_SURGE}"
+  validate_int_or_percent "ROLLING_MAX_UNAVAILABLE" "${ROLLING_MAX_UNAVAILABLE}"
+  render_namespace
+  cat <<EOF
+apiVersion: scheduling.volcano.sh/v1beta1
+kind: Queue
+metadata:
+  name: ${QUEUE_NAME}
+spec:
+  weight: 1
+  reclaimable: false
+  capability:
+    cpu: "20"
+    memory: "56Gi"
+---
+EOF
+  render_skewed_scripts_configmap
+  render_skewed_deployment 1
+  render_skewed_deployment 2
+  render_skewed_deployment 3
+}
+
 apply_manifest() {
   require_cmd "${KUBECTL}"
   render_manifest | "${KUBECTL}" apply -f -
+}
+
+apply_skewed_manifest() {
+  require_cmd "${KUBECTL}"
+  render_skewed_manifest | "${KUBECTL}" apply -f -
 }
 
 wait_ready() {
@@ -371,7 +574,18 @@ wait_ready() {
   "${KUBECTL}" -n "${NAMESPACE}" wait --for=condition=Ready "pod" -l "app.kubernetes.io/name=${DEPLOYMENT_NAME}" --timeout="${WAIT_TIMEOUT}"
 }
 
-patch_rollout_strategy() {
+wait_skewed_ready() {
+  require_cmd "${KUBECTL}"
+  for idx in 1 2 3; do
+    deployment_name="$(skewed_deployment_name "${idx}")"
+    "${KUBECTL}" -n "${NAMESPACE}" rollout status "deployment/${deployment_name}" --timeout="${WAIT_TIMEOUT}"
+  done
+  "${KUBECTL}" -n "${NAMESPACE}" wait --for=condition=Ready "pod" -l "loadtest.volcano.sh/group=${SKEWED_DEPLOYMENT_PREFIX}" --timeout="${WAIT_TIMEOUT}"
+}
+
+patch_deployment_rollout_strategy() {
+  deployment_name="$1"
+  shift
   mode="$1"
   max_surge_override="$2"
   max_unavailable_override="$3"
@@ -400,19 +614,22 @@ patch_rollout_strategy() {
   surge_json="$(json_int_or_percent "${surge}")"
   unavailable_json="$(json_int_or_percent "${unavailable}")"
 
-  "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${DEPLOYMENT_NAME}" --type merge \
+  "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${deployment_name}" --type merge \
     -p "{\"spec\":{\"strategy\":{\"type\":\"RollingUpdate\",\"rollingUpdate\":{\"maxSurge\":${surge_json},\"maxUnavailable\":${unavailable_json}}}}}"
 }
 
-rollout() {
-  require_cmd "${KUBECTL}"
-  mode=""
-  max_surge_override=""
-  max_unavailable_override=""
+patch_rollout_strategy() {
+  patch_deployment_rollout_strategy "${DEPLOYMENT_NAME}" "$@"
+}
+
+parse_rollout_args() {
+  ROLLOUT_MODE=""
+  ROLLOUT_MAX_SURGE_OVERRIDE=""
+  ROLLOUT_MAX_UNAVAILABLE_OVERRIDE=""
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
       --safe|--surge)
-        mode="$1"
+        ROLLOUT_MODE="$1"
         shift
         ;;
       --max-surge|--maxSurge)
@@ -420,11 +637,11 @@ rollout() {
           echo "$1 requires a value" >&2
           exit 1
         }
-        max_surge_override="$2"
+        ROLLOUT_MAX_SURGE_OVERRIDE="$2"
         shift 2
         ;;
       --max-surge=*|--maxSurge=*|maxSurge=*)
-        max_surge_override="${1#*=}"
+        ROLLOUT_MAX_SURGE_OVERRIDE="${1#*=}"
         shift
         ;;
       --max-unavailable|--maxUnavailable)
@@ -432,11 +649,11 @@ rollout() {
           echo "$1 requires a value" >&2
           exit 1
         }
-        max_unavailable_override="$2"
+        ROLLOUT_MAX_UNAVAILABLE_OVERRIDE="$2"
         shift 2
         ;;
       --max-unavailable=*|--maxUnavailable=*|maxUnavailable=*)
-        max_unavailable_override="${1#*=}"
+        ROLLOUT_MAX_UNAVAILABLE_OVERRIDE="${1#*=}"
         shift
         ;;
       *)
@@ -445,11 +662,33 @@ rollout() {
         ;;
     esac
   done
-  patch_rollout_strategy "${mode}" "${max_surge_override}" "${max_unavailable_override}"
+}
+
+rollout() {
+  require_cmd "${KUBECTL}"
+  parse_rollout_args "$@"
+  patch_rollout_strategy "${ROLLOUT_MODE}" "${ROLLOUT_MAX_SURGE_OVERRIDE}" "${ROLLOUT_MAX_UNAVAILABLE_OVERRIDE}"
   rollout_id="$(date +%Y%m%d%H%M%S)"
   "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${DEPLOYMENT_NAME}" --type merge \
     -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"loadtest.volcano.sh/rollout-id\":\"${rollout_id}\"}}}}}"
   wait_ready
+}
+
+rollout_skewed() {
+  require_cmd "${KUBECTL}"
+  parse_rollout_args "$@"
+  for idx in 1 2 3; do
+    deployment_name="$(skewed_deployment_name "${idx}")"
+    patch_deployment_rollout_strategy "${deployment_name}" "${ROLLOUT_MODE}" "${ROLLOUT_MAX_SURGE_OVERRIDE}" "${ROLLOUT_MAX_UNAVAILABLE_OVERRIDE}"
+  done
+
+  rollout_id="$(date +%Y%m%d%H%M%S)"
+  for idx in 1 2 3; do
+    deployment_name="$(skewed_deployment_name "${idx}")"
+    "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${deployment_name}" --type merge \
+      -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"loadtest.volcano.sh/rollout-id\":\"${rollout_id}\"}},\"spec\":{\"affinity\":null}}}}"
+  done
+  wait_skewed_ready
 }
 
 print_adapter_commands() {
@@ -582,6 +821,19 @@ cleanup() {
   fi
 }
 
+cleanup_skewed() {
+  require_cmd "${KUBECTL}"
+  for idx in 1 2 3; do
+    deployment_name="$(skewed_deployment_name "${idx}")"
+    "${KUBECTL}" -n "${NAMESPACE}" delete deployment "${deployment_name}" --ignore-not-found
+  done
+  "${KUBECTL}" -n "${NAMESPACE}" delete configmap "${SKEWED_DEPLOYMENT_PREFIX}-scripts" --ignore-not-found
+  "${KUBECTL}" delete queue "${QUEUE_NAME}" --ignore-not-found
+  if [[ "${NAMESPACE}" != "default" ]]; then
+    "${KUBECTL}" delete namespace "${NAMESPACE}" --ignore-not-found
+  fi
+}
+
 action="${1:-help}"
 shift || true
 
@@ -589,14 +841,26 @@ case "${action}" in
   render)
     render_manifest
     ;;
+  render-skewed)
+    render_skewed_manifest
+    ;;
   apply)
     apply_manifest
+    ;;
+  apply-skewed)
+    apply_skewed_manifest
     ;;
   wait)
     wait_ready
     ;;
+  wait-skewed)
+    wait_skewed_ready
+    ;;
   rollout)
     rollout "$@"
+    ;;
+  rollout-skewed)
+    rollout_skewed "$@"
     ;;
   observe)
     observe
@@ -612,6 +876,9 @@ case "${action}" in
     ;;
   cleanup)
     cleanup
+    ;;
+  cleanup-skewed)
+    cleanup_skewed
     ;;
   help|-h|--help)
     usage
