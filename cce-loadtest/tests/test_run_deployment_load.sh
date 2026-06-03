@@ -71,9 +71,27 @@ assert_contains "${queries}" "> bool 80"
 override_manifest="$(REPLICAS=58 ${SCRIPT} render)"
 assert_contains "${override_manifest}" "replicas: 58"
 
+surge_manifest="$(ROLLING_MAX_SURGE=25% ROLLING_MAX_UNAVAILABLE=0 ${SCRIPT} render)"
+assert_contains "${surge_manifest}" "maxSurge: 25%"
+assert_contains "${surge_manifest}" "maxUnavailable: 0"
+
 java_manifest="$(LOAD_PROFILE=java-spike JAVA_PEAK_MEMORY_MI=590 JAVA_PEAK_CPU_MILLICORES=245 ${SCRIPT} render)"
 assert_contains "${java_manifest}" "LOAD_PROFILE=\"java-spike\""
 assert_contains "${java_manifest}" "JAVA_PEAK_MEMORY_MI=\"590\""
 assert_contains "${java_manifest}" "JAVA_PEAK_CPU_MILLICORES=\"245\""
+
+tmpdir="$(mktemp -d)"
+fake_kubectl="${tmpdir}/kubectl"
+kubectl_log="${tmpdir}/kubectl.log"
+cat > "${fake_kubectl}" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${KUBECTL_LOG}"
+EOF
+chmod +x "${fake_kubectl}"
+
+KUBECTL_LOG="${kubectl_log}" KUBECTL="${fake_kubectl}" WAIT_TIMEOUT=1s "${SCRIPT}" rollout --surge maxSurge=25% maxUnavailable=0
+rollout_log="$(cat "${kubectl_log}")"
+assert_contains "${rollout_log}" '"maxSurge":"25%"'
+assert_contains "${rollout_log}" '"maxUnavailable":0'
 
 echo "PASS: run-deployment-load.sh behavior"

@@ -31,6 +31,17 @@ JAVA_STEADY_CPU_MILLICORES="${JAVA_STEADY_CPU_MILLICORES:-200}"
 
 ROLLING_MAX_SURGE="${ROLLING_MAX_SURGE:-0}"
 ROLLING_MAX_UNAVAILABLE="${ROLLING_MAX_UNAVAILABLE:-5}"
+ROLLING_SAFE_MAX_SURGE="${ROLLING_SAFE_MAX_SURGE:-0}"
+ROLLING_SAFE_MAX_UNAVAILABLE="${ROLLING_SAFE_MAX_UNAVAILABLE:-${ROLLING_MAX_UNAVAILABLE}}"
+ROLLING_SURGE_MAX_SURGE="${ROLLING_SURGE_MAX_SURGE:-}"
+if [[ -z "${ROLLING_SURGE_MAX_SURGE}" ]]; then
+  if [[ "${ROLLING_MAX_SURGE}" == "0" ]]; then
+    ROLLING_SURGE_MAX_SURGE="5"
+  else
+    ROLLING_SURGE_MAX_SURGE="${ROLLING_MAX_SURGE}"
+  fi
+fi
+ROLLING_SURGE_MAX_UNAVAILABLE="${ROLLING_SURGE_MAX_UNAVAILABLE:-0}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-10m}"
 KUBECTL="${KUBECTL:-kubectl}"
 HOTSPOT_MEMORY_THRESHOLD="${HOTSPOT_MEMORY_THRESHOLD:-80}"
@@ -42,7 +53,7 @@ Usage:
   $(basename "$0") render
   $(basename "$0") apply
   $(basename "$0") wait
-  $(basename "$0") rollout [--safe|--surge]
+  $(basename "$0") rollout [--safe|--surge] [maxSurge=25%] [maxUnavailable=0]
   $(basename "$0") observe
   $(basename "$0") watch-waterline
   $(basename "$0") check-adapter [--print-only]
@@ -58,8 +69,31 @@ Common environment variables:
   SWR_VERSION                default: ${SWR_VERSION}
   REPLICAS                   default: ${REPLICAS}
   LOAD_PROFILE               linear|java-spike, default: ${LOAD_PROFILE}
+  ROLLING_MAX_SURGE          default Deployment maxSurge: ${ROLLING_MAX_SURGE}
+  ROLLING_MAX_UNAVAILABLE    default Deployment maxUnavailable: ${ROLLING_MAX_UNAVAILABLE}
+  ROLLING_SURGE_MAX_SURGE    rollout --surge maxSurge: ${ROLLING_SURGE_MAX_SURGE}
+  ROLLING_SURGE_MAX_UNAVAILABLE rollout --surge maxUnavailable: ${ROLLING_SURGE_MAX_UNAVAILABLE}
   PROMETHEUS_URL             optional, for observe queries
 EOF
+}
+
+validate_int_or_percent() {
+  name="$1"
+  value="$2"
+  if [[ ! "${value}" =~ ^[0-9]+%?$ ]]; then
+    echo "${name} must be a non-negative integer or percentage, for example 5 or 25%" >&2
+    exit 1
+  fi
+}
+
+json_int_or_percent() {
+  value="$1"
+  validate_int_or_percent "rolling update value" "${value}"
+  if [[ "${value}" =~ ^[0-9]+$ ]]; then
+    printf '%s' "${value}"
+  else
+    printf '"%s"' "${value}"
+  fi
 }
 
 require_cmd() {
@@ -93,6 +127,8 @@ EOF
 }
 
 render_manifest() {
+  validate_int_or_percent "ROLLING_MAX_SURGE" "${ROLLING_MAX_SURGE}"
+  validate_int_or_percent "ROLLING_MAX_UNAVAILABLE" "${ROLLING_MAX_UNAVAILABLE}"
   render_namespace
   cat <<EOF
 apiVersion: scheduling.volcano.sh/v1beta1
@@ -337,28 +373,79 @@ wait_ready() {
 
 patch_rollout_strategy() {
   mode="$1"
+  max_surge_override="$2"
+  max_unavailable_override="$3"
   case "${mode}" in
     --safe|"")
-      surge=0
-      unavailable=5
+      surge="${ROLLING_SAFE_MAX_SURGE}"
+      unavailable="${ROLLING_SAFE_MAX_UNAVAILABLE}"
       ;;
     --surge)
-      surge=5
-      unavailable=0
+      surge="${ROLLING_SURGE_MAX_SURGE}"
+      unavailable="${ROLLING_SURGE_MAX_UNAVAILABLE}"
       ;;
     *)
       echo "invalid rollout mode: ${mode}; expected --safe or --surge" >&2
       exit 1
       ;;
   esac
+  if [[ -n "${max_surge_override}" ]]; then
+    surge="${max_surge_override}"
+  fi
+  if [[ -n "${max_unavailable_override}" ]]; then
+    unavailable="${max_unavailable_override}"
+  fi
+  validate_int_or_percent "maxSurge" "${surge}"
+  validate_int_or_percent "maxUnavailable" "${unavailable}"
+  surge_json="$(json_int_or_percent "${surge}")"
+  unavailable_json="$(json_int_or_percent "${unavailable}")"
 
   "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${DEPLOYMENT_NAME}" --type merge \
-    -p "{\"spec\":{\"strategy\":{\"type\":\"RollingUpdate\",\"rollingUpdate\":{\"maxSurge\":${surge},\"maxUnavailable\":${unavailable}}}}}"
+    -p "{\"spec\":{\"strategy\":{\"type\":\"RollingUpdate\",\"rollingUpdate\":{\"maxSurge\":${surge_json},\"maxUnavailable\":${unavailable_json}}}}}"
 }
 
 rollout() {
   require_cmd "${KUBECTL}"
-  patch_rollout_strategy "${1:-}"
+  mode=""
+  max_surge_override=""
+  max_unavailable_override=""
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --safe|--surge)
+        mode="$1"
+        shift
+        ;;
+      --max-surge|--maxSurge)
+        [[ "$#" -ge 2 ]] || {
+          echo "$1 requires a value" >&2
+          exit 1
+        }
+        max_surge_override="$2"
+        shift 2
+        ;;
+      --max-surge=*|--maxSurge=*|maxSurge=*)
+        max_surge_override="${1#*=}"
+        shift
+        ;;
+      --max-unavailable|--maxUnavailable)
+        [[ "$#" -ge 2 ]] || {
+          echo "$1 requires a value" >&2
+          exit 1
+        }
+        max_unavailable_override="$2"
+        shift 2
+        ;;
+      --max-unavailable=*|--maxUnavailable=*|maxUnavailable=*)
+        max_unavailable_override="${1#*=}"
+        shift
+        ;;
+      *)
+        echo "invalid rollout argument: $1" >&2
+        exit 1
+        ;;
+    esac
+  done
+  patch_rollout_strategy "${mode}" "${max_surge_override}" "${max_unavailable_override}"
   rollout_id="$(date +%Y%m%d%H%M%S)"
   "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${DEPLOYMENT_NAME}" --type merge \
     -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"loadtest.volcano.sh/rollout-id\":\"${rollout_id}\"}}}}}"
@@ -509,7 +596,7 @@ case "${action}" in
     wait_ready
     ;;
   rollout)
-    rollout "${1:-}"
+    rollout "$@"
     ;;
   observe)
     observe

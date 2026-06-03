@@ -215,7 +215,7 @@ JAVA_STEADY_CPU_MILLICORES=200
 - `maxSurge: 0`
 - `maxUnavailable: 5`
 
-压力滚动升级，最多临时增加 5 个 Pod：
+压力滚动升级默认最多临时增加 5 个 Pod：
 
 ```bash
 ./run-deployment-load.sh rollout --surge
@@ -226,13 +226,37 @@ JAVA_STEADY_CPU_MILLICORES=200
 - `maxSurge: 5`
 - `maxUnavailable: 0`
 
-当 `REPLICAS=58` 时，压力滚动升级期间理论峰值内存约为：
+如果希望按比例临时增加 Pod，可以直接传 Kubernetes RollingUpdate 的 IntOrString 值。例如 `maxSurge=25%`：
+
+```bash
+./run-deployment-load.sh rollout --surge maxSurge=25% maxUnavailable=0
+```
+
+等价的环境变量写法：
+
+```bash
+ROLLING_SURGE_MAX_SURGE=25% ROLLING_SURGE_MAX_UNAVAILABLE=0 ./run-deployment-load.sh rollout --surge
+```
+
+如果希望首次 `apply` 时 Deployment 默认策略也使用百分比 surge：
+
+```bash
+ROLLING_MAX_SURGE=25% ROLLING_MAX_UNAVAILABLE=0 ./run-deployment-load.sh apply
+```
+
+当 `REPLICAS=58` 且默认 `maxSurge=5` 时，压力滚动升级期间理论峰值内存约为：
 
 ```text
 63 * 500Mi = 31500Mi
 ```
 
-全集群新增约 `55%`，叠加基础水位后约 `65%`。这个模式更容易暴露“新 Pod 尚未被 Prometheus 采到时，调度是否倾向局部热点”的问题。
+如果使用 `maxSurge=25%`，Kubernetes 对 surge 百分比向上取整，58 副本会最多临时增加约 15 个 Pod：
+
+```text
+73 * 500Mi = 36500Mi
+```
+
+这个模式更容易暴露“新 Pod 尚未被 Prometheus 采到时，调度是否倾向局部热点”的问题。对比 Koordinator 时，建议使用 `LOAD_PROFILE=java-spike` 和 `maxSurge=25%` 放大启动尖峰和指标滞后窗口。
 
 ## 6. 实时水位观测
 
