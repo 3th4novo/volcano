@@ -181,7 +181,22 @@ LOAD_PROFILE=request-fixed ./run-deployment-load.sh apply
 ./run-deployment-load.sh wait
 ```
 
-`request-fixed` 会根据当前 Pod 的 `CPU_REQUEST` 和 `MEMORY_REQUEST` 生成压力值。默认规格下，每个 Pod 启动后直接施加 `500Mi` 内存和约 `200m` CPU，并持续保持。
+`request-fixed` 默认会根据当前 Pod 的 `CPU_REQUEST` 和 `MEMORY_REQUEST` 生成压力值。默认规格下，每个 Pod 启动后直接施加 `500Mi` 内存和约 `200m` CPU，并持续保持。
+
+如果希望 Deployment 的申请值和真实稳定加压值分开，可以显式覆盖稳定加压值：
+
+```bash
+LOAD_PROFILE=request-fixed \
+CPU_REQUEST=300m \
+CPU_LIMIT=500m \
+MEMORY_REQUEST=1Gi \
+MEMORY_LIMIT=1200Mi \
+REQUEST_FIXED_MEMORY_MI=700 \
+REQUEST_FIXED_CPU_MILLICORES=150 \
+./run-deployment-load.sh apply
+```
+
+上面的配置会让 Pod 的资源申请保持为 `1Gi/300m`，但启动后的真实压力保持在约 `700Mi/150m`。`REQUEST_FIXED_MEMORY_MI` 的单位固定为 `Mi`，`REQUEST_FIXED_CPU_MILLICORES` 的单位固定为 millicores，配置时只填写整数。加压值如果超过 limit，内存可能触发 OOMKilled，CPU 会被 CFS throttling 限流。
 
 也可以切换成 Java 类业务启动曲线：
 

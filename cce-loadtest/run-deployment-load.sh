@@ -14,6 +14,8 @@ CPU_REQUEST="${CPU_REQUEST:-200m}"
 CPU_LIMIT="${CPU_LIMIT:-250m}"
 MEMORY_REQUEST="${MEMORY_REQUEST:-500Mi}"
 MEMORY_LIMIT="${MEMORY_LIMIT:-600Mi}"
+REQUEST_FIXED_MEMORY_MI="${REQUEST_FIXED_MEMORY_MI:-}"
+REQUEST_FIXED_CPU_MILLICORES="${REQUEST_FIXED_CPU_MILLICORES:-}"
 
 TARGET_MEMORY_MI="${TARGET_MEMORY_MI:-500}"
 MEMORY_STEP_MI="${MEMORY_STEP_MI:-25}"
@@ -83,6 +85,8 @@ Common environment variables:
   SWR_VERSION                default: ${SWR_VERSION}
   REPLICAS                   default: ${REPLICAS}
   LOAD_PROFILE               linear|java-spike|request-fixed, default: ${LOAD_PROFILE}
+  REQUEST_FIXED_MEMORY_MI    request-fixed memory pressure in Mi, default: MEMORY_REQUEST
+  REQUEST_FIXED_CPU_MILLICORES request-fixed CPU pressure in millicores, default: CPU_REQUEST
   ROLLING_MAX_SURGE          default Deployment maxSurge: ${ROLLING_MAX_SURGE}
   ROLLING_MAX_UNAVAILABLE    default Deployment maxUnavailable: ${ROLLING_MAX_UNAVAILABLE}
   ROLLING_SURGE_MAX_SURGE    rollout --surge maxSurge: ${ROLLING_SURGE_MAX_SURGE}
@@ -121,6 +125,15 @@ require_cmd() {
     echo "missing required command: $1" >&2
     exit 1
   }
+}
+
+validate_non_negative_integer() {
+  local name="$1"
+  local value="$2"
+  if [[ ! "${value}" =~ ^[0-9]+$ ]]; then
+    echo "${name} must be a non-negative integer without unit" >&2
+    exit 1
+  fi
 }
 
 cpu_request_to_millicores() {
@@ -173,9 +186,13 @@ EOF
 render_manifest() {
   validate_int_or_percent "ROLLING_MAX_SURGE" "${ROLLING_MAX_SURGE}"
   validate_int_or_percent "ROLLING_MAX_UNAVAILABLE" "${ROLLING_MAX_UNAVAILABLE}"
-  local request_memory_mi request_cpu_millicores
+  local request_memory_mi request_cpu_millicores request_fixed_memory_mi request_fixed_cpu_millicores
   request_memory_mi="$(memory_request_to_mi "${MEMORY_REQUEST}")"
   request_cpu_millicores="$(cpu_request_to_millicores "${CPU_REQUEST}")"
+  request_fixed_memory_mi="${REQUEST_FIXED_MEMORY_MI:-${request_memory_mi}}"
+  request_fixed_cpu_millicores="${REQUEST_FIXED_CPU_MILLICORES:-${request_cpu_millicores}}"
+  validate_non_negative_integer "REQUEST_FIXED_MEMORY_MI" "${request_fixed_memory_mi}"
+  validate_non_negative_integer "REQUEST_FIXED_CPU_MILLICORES" "${request_fixed_cpu_millicores}"
   render_namespace
   cat <<EOF
 apiVersion: scheduling.volcano.sh/v1beta1
@@ -206,8 +223,8 @@ data:
     RAMP_SECONDS="${RAMP_SECONDS:-20}"
     HOLD_SECONDS="${HOLD_SECONDS:-86400}"
     LOAD_PROFILE="${LOAD_PROFILE:-linear}"
-    REQUEST_MEMORY_MI="${request_memory_mi}"
-    REQUEST_CPU_MILLICORES="${request_cpu_millicores}"
+    REQUEST_FIXED_MEMORY_MI="${request_fixed_memory_mi}"
+    REQUEST_FIXED_CPU_MILLICORES="${request_fixed_cpu_millicores}"
     JAVA_PEAK_MEMORY_MI="${JAVA_PEAK_MEMORY_MI:-580}"
     JAVA_PEAK_CPU_MILLICORES="${JAVA_PEAK_CPU_MILLICORES:-240}"
     JAVA_PEAK_HOLD_SECONDS="${JAVA_PEAK_HOLD_SECONDS:-5}"
@@ -312,8 +329,8 @@ data:
     }
 
     run_request_fixed_profile() {
-      echo "request-fixed profile: memory=\${REQUEST_MEMORY_MI}Mi cpu=\${REQUEST_CPU_MILLICORES}m"
-      start_stress "\${REQUEST_MEMORY_MI}" "\${REQUEST_CPU_MILLICORES}"
+      echo "request-fixed profile: memory=\${REQUEST_FIXED_MEMORY_MI}Mi cpu=\${REQUEST_FIXED_CPU_MILLICORES}m"
+      start_stress "\${REQUEST_FIXED_MEMORY_MI}" "\${REQUEST_FIXED_CPU_MILLICORES}"
       wait
     }
 
@@ -387,10 +404,10 @@ $(render_image_pull_secrets)
           value: "${HOLD_SECONDS}"
         - name: LOAD_PROFILE
           value: "${LOAD_PROFILE}"
-        - name: REQUEST_MEMORY_MI
-          value: "${request_memory_mi}"
-        - name: REQUEST_CPU_MILLICORES
-          value: "${request_cpu_millicores}"
+        - name: REQUEST_FIXED_MEMORY_MI
+          value: "${request_fixed_memory_mi}"
+        - name: REQUEST_FIXED_CPU_MILLICORES
+          value: "${request_fixed_cpu_millicores}"
         - name: JAVA_PEAK_MEMORY_MI
           value: "${JAVA_PEAK_MEMORY_MI}"
         - name: JAVA_PEAK_CPU_MILLICORES
