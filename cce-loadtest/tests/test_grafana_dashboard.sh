@@ -24,14 +24,15 @@ ruby -e '
     "Scheduled CCE pods per node",
     "Per-node hotspot probability, last 5m",
     "Per-node idle probability, last 5m",
-    "Peak CPU / memory waterline, last 5m",
+    "Peak CPU waterline, last 5m",
+    "Peak memory waterline, last 5m",
     "Per-node CPU waterline",
     "Per-node memory waterline",
     "CPU waterline variance across nodes",
     "Memory waterline variance across nodes"
   ]
   actual_titles = dashboard.fetch("panels").map { |panel| panel.fetch("title") }
-  abort("expected exactly 8 dashboard panels") unless actual_titles.length == 8
+  abort("expected exactly 9 dashboard panels") unless actual_titles.length == 9
   abort("unexpected panel titles: #{actual_titles.inspect}") unless actual_titles == expected_titles
 
   variable_names = dashboard.fetch("templating").fetch("list").map { |variable| variable.fetch("name") }
@@ -47,8 +48,9 @@ assert_contains "${dashboard}" "> bool 80"
 assert_contains "${dashboard}" "[5m:30s]"
 assert_contains "${dashboard}" "\"title\": \"Per-node idle probability, last 5m\""
 assert_contains "${dashboard}" "< bool 30"
-assert_contains "${dashboard}" "\"title\": \"Peak CPU / memory waterline, last 5m\""
+assert_contains "${dashboard}" "\"title\": \"Peak CPU waterline, last 5m\""
 assert_contains "${dashboard}" "max_over_time((100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\\\"idle\\\",instance=~\\\"\$node\\\"}[1m]))))[5m:30s])"
+assert_contains "${dashboard}" "\"title\": \"Peak memory waterline, last 5m\""
 assert_contains "${dashboard}" "max_over_time((100 * (1 - node_memory_MemAvailable_bytes{instance=~\\\"\$node\\\"} / node_memory_MemTotal_bytes{instance=~\\\"\$node\\\"}))[5m:30s])"
 assert_contains "${dashboard}" "\"title\": \"Per-node CPU waterline\""
 assert_contains "${dashboard}" "node_cpu_seconds_total{mode=\\\"idle\\\",instance=~\\\"\$node\\\"}"
@@ -67,6 +69,7 @@ for removed in \
   "Load-test memory usage" \
   "Load-test CPU cores" \
   "Load-test memory waterline" \
+  "Peak CPU / memory waterline" \
   "Cluster hotspot probability" \
   "Cluster idle-node probability" \
   "Memory waterline skew" \

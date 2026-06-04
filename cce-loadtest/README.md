@@ -456,7 +456,8 @@ Dashboard 只保留这些面板：
 - Scheduled CCE pods per node
 - Per-node hotspot probability, last 5m
 - Per-node idle probability, last 5m
-- Peak CPU / memory waterline, last 5m
+- Peak CPU waterline, last 5m
+- Peak memory waterline, last 5m
 - Per-node CPU waterline
 - Per-node memory waterline
 - CPU waterline variance across nodes
