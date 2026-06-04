@@ -805,26 +805,32 @@ check_adapter() {
 
 print_promql() {
   cat <<EOF
-# Per-node total memory waterline (%):
+# Scheduled CCE pods per node:
+count by (node) (kube_pod_info{namespace="default",pod=~".*cce.*",node!=""})
+
+# Per-node hotspot probability over the last 5m; hotspot means max(cpu, memory) > 80%:
+100 * avg_over_time(((max by (instance) (label_replace(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))), "resource", "cpu", "instance", ".*") or label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "resource", "memory", "instance", ".*"))) > bool 80)[5m:30s])
+
+# Per-node idle probability over the last 5m; idle means max(cpu, memory) < 30%:
+100 * avg_over_time(((max by (instance) (label_replace(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))), "resource", "cpu", "instance", ".*") or label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "resource", "memory", "instance", ".*"))) < bool 30)[5m:30s])
+
+# Peak per-node CPU waterline over the last 5m:
+max_over_time((100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))))[5m:30s])
+
+# Peak per-node memory waterline over the last 5m:
+max_over_time((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))[5m:30s])
+
+# Per-node CPU waterline:
+100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])))
+
+# Per-node memory waterline:
 100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
 
-# Per-node load-test pod memory waterline over allocatable memory (%):
-100 * sum by (node) (container_memory_working_set_bytes{namespace="${NAMESPACE}",pod=~"${DEPLOYMENT_NAME}-.*",container="${CONTAINER_NAME}"}) / sum by (node) (kube_node_status_allocatable{resource="memory",unit="byte"})
+# CPU waterline variance across nodes:
+stdvar(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))))
 
-# Per-node load-test CPU cores:
-sum by (node) (rate(container_cpu_usage_seconds_total{namespace="${NAMESPACE}",pod=~"${DEPLOYMENT_NAME}-.*",container="${CONTAINER_NAME}"}[1m]))
-
-# Hotspot probability over the last 30m, threshold=${HOTSPOT_MEMORY_THRESHOLD}%:
-100 * avg_over_time(((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool ${HOTSPOT_MEMORY_THRESHOLD})[30m:30s])
-
-# Cluster hotspot probability: at least one node is above threshold during each sample:
-100 * avg_over_time((max(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool ${HOTSPOT_MEMORY_THRESHOLD})[30m:30s])
-
-# Per-node memory skew; lower means better balance:
-stddev(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
-
-# Peak per-node memory waterline in the last 30m:
-max_over_time((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))[30m:30s])
+# Memory waterline variance across nodes:
+stdvar(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
 EOF
 }
 

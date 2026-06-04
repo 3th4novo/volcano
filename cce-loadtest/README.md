@@ -368,77 +368,76 @@ Prometheus 查询：
 ./run-deployment-load.sh promql
 ```
 
-关键 PromQL：
+Grafana Dashboard 现在只关注节点水位、节点间离散度和 Pod 分布。压测 Pod 统计固定使用 `default` namespace 下名称包含 `cce` 的 Pod：
+
+```promql
+count by (node) (kube_pod_info{namespace="default",pod=~".*cce.*",node!=""})
+```
+
+各节点 CPU 水位：
+
+```promql
+100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])))
+```
+
+各节点内存水位：
 
 ```promql
 100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
 ```
 
-每节点总内存水位。
-
-```promql
-100 * sum by (node) (container_memory_working_set_bytes{namespace="default",pod=~"cce-resource-consumer-.*",container="consumer"}) / sum by (node) (kube_node_status_allocatable{resource="memory",unit="byte"})
-```
-
-每节点本次测试负载贡献的内存水位。
-
-```promql
-sum by (node) (rate(container_cpu_usage_seconds_total{namespace="default",pod=~"cce-resource-consumer-.*",container="consumer"}[1m]))
-```
-
-每节点本次测试负载贡献的 CPU core 数。
-
 ## 8. 热点出现概率
 
-当前热点定义为节点真实内存利用率超过 `80%`：
+当前热点定义为节点综合水位超过 `80%`。综合水位取 CPU 水位和内存水位的较高值；空闲定义为综合水位低于 `30%`。
 
-```bash
-export HOTSPOT_MEMORY_THRESHOLD=80
-```
-
-单节点过去 10 分钟热点概率：
+单节点过去 5 分钟热点概率：
 
 ```promql
-100 * avg_over_time(((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool 80)[10m:30s])
+100 * avg_over_time(((max by (instance) (
+  label_replace(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))), "resource", "cpu", "instance", ".*")
+  or
+  label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "resource", "memory", "instance", ".*")
+)) > bool 80)[5m:30s])
 ```
 
-集群任一节点过去 10 分钟出现热点的概率：
+单节点过去 5 分钟空闲概率：
 
 ```promql
-100 * avg_over_time((max(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > bool 80)[10m:30s])
+100 * avg_over_time(((max by (instance) (
+  label_replace(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))), "resource", "cpu", "instance", ".*")
+  or
+  label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "resource", "memory", "instance", ".*")
+)) < bool 30)[5m:30s])
 ```
 
-单节点过去 10 分钟空闲概率，空闲定义为节点真实内存利用率低于 `20%`：
+过去 5 分钟 CPU / 内存峰值水位：
 
 ```promql
-100 * avg_over_time(((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) < bool 20)[10m:30s])
+max_over_time((100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))))[5m:30s])
 ```
 
-集群过去 10 分钟出现空闲节点的概率：
-
 ```promql
-100 * avg_over_time((min(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) < bool 20)[10m:30s])
+max_over_time((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))[5m:30s])
 ```
 
-节点间水位离散度：
+节点间 CPU 水位方差：
 
 ```promql
-stddev(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+stdvar(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))))
 ```
 
-节点间最大水位差：
+节点间内存水位方差：
 
 ```promql
-max(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) - min(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+stdvar(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
 ```
 
 增强点有效时，批量下发和滚动升级期间应看到：
 
 - 高水位节点更少。
-- `stddev` 更低。
-- 最大水位差更小。
-- `cluster hotspot probability` 更低。
-- 节点真实内存水位更接近目标水位，且 8Gi 节点超过 `80%` 的时间占比更低。
+- CPU / 内存水位方差更低。
+- 各节点 Pod 数更接近。
+- 各节点超过 `80%` 的时间占比更低，低于 `30%` 的空闲概率更符合预期。
 
 ## 9. Grafana 可视化
 
@@ -450,31 +449,23 @@ cce-loadtest/dashboards/grafana-cce-loadtest.json
 
 导入后设置变量：
 
-- `namespace`: `default`
-- `deployment`: `cce-resource-consumer`
-- `container`: `consumer`
-- `threshold`: `80`
+- `node`: 默认 `All`，也可以只选择部分节点
 
-推荐同时打开这些面板：
+Dashboard 只保留这些面板：
 
-- Per-node total memory waterline
-- Node CPU usage - `$node`
-- Node memory usage - `$node`
-- Load-test memory waterline
-- Load-test memory usage
-- Load-test CPU cores
-- Per-node hotspot probability, last 10m
-- Cluster hotspot probability, last 10m
-- Per-node idle probability, last 10m
-- Cluster idle-node probability, last 10m
-- Memory waterline skew
-- Peak CPU waterline, last 10m
-- Peak memory waterline, last 10m
+- Scheduled CCE pods per node
+- Per-node hotspot probability, last 5m
+- Per-node idle probability, last 5m
+- Peak CPU / memory waterline, last 5m
+- Per-node CPU waterline
+- Per-node memory waterline
+- CPU waterline variance across nodes
+- Memory waterline variance across nodes
 
 观察窗口建议：
 
-- 批量下发：`Last 10 minutes`
-- 滚动升级：`Last 10 minutes`
+- 批量下发：`Last 5 minutes`
+- 滚动升级：`Last 5 minutes`
 - Prometheus scrape interval 较长时，窗口可放大到 `1 hour`
 
 ## 10. 清理
