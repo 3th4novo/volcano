@@ -34,6 +34,19 @@ ruby -e '
   actual_titles = dashboard.fetch("panels").map { |panel| panel.fetch("title") }
   abort("expected exactly 9 dashboard panels") unless actual_titles.length == 9
   abort("unexpected panel titles: #{actual_titles.inspect}") unless actual_titles == expected_titles
+  expected_grid = [
+    { "x" => 0, "y" => 0, "w" => 8, "h" => 8 },
+    { "x" => 8, "y" => 0, "w" => 8, "h" => 8 },
+    { "x" => 16, "y" => 0, "w" => 8, "h" => 8 },
+    { "x" => 0, "y" => 8, "w" => 8, "h" => 8 },
+    { "x" => 8, "y" => 8, "w" => 8, "h" => 8 },
+    { "x" => 16, "y" => 8, "w" => 8, "h" => 8 },
+    { "x" => 0, "y" => 16, "w" => 8, "h" => 8 },
+    { "x" => 8, "y" => 16, "w" => 8, "h" => 8 },
+    { "x" => 16, "y" => 16, "w" => 8, "h" => 8 }
+  ]
+  actual_grid = dashboard.fetch("panels").map { |panel| panel.fetch("gridPos") }
+  abort("dashboard panels should be arranged as a 3x3 grid: #{actual_grid.inspect}") unless actual_grid == expected_grid
 
   variable_names = dashboard.fetch("templating").fetch("list").map { |variable| variable.fetch("name") }
   abort("unexpected variables: #{variable_names.inspect}") unless variable_names == ["datasource", "node"]
