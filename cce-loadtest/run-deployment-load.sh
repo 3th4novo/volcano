@@ -757,18 +757,14 @@ rollout() {
 rollout_skewed() {
   require_cmd "${KUBECTL}"
   parse_rollout_args "$@"
-  for idx in 1 2 3; do
-    deployment_name="$(skewed_deployment_name "${idx}")"
-    patch_deployment_rollout_strategy "${deployment_name}" "${ROLLOUT_MODE}" "${ROLLOUT_MAX_SURGE_OVERRIDE}" "${ROLLOUT_MAX_UNAVAILABLE_OVERRIDE}"
-  done
-
   rollout_id="$(date +%Y%m%d%H%M%S)"
   for idx in 1 2 3; do
     deployment_name="$(skewed_deployment_name "${idx}")"
+    patch_deployment_rollout_strategy "${deployment_name}" "${ROLLOUT_MODE}" "${ROLLOUT_MAX_SURGE_OVERRIDE}" "${ROLLOUT_MAX_UNAVAILABLE_OVERRIDE}"
     "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${deployment_name}" --type merge \
       -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"loadtest.volcano.sh/rollout-id\":\"${rollout_id}\"}},\"spec\":{\"affinity\":null}}}}"
+    "${KUBECTL}" -n "${NAMESPACE}" rollout status "deployment/${deployment_name}" --timeout="${WAIT_TIMEOUT}"
   done
-  wait_skewed_rollout_status
 }
 
 print_adapter_commands() {

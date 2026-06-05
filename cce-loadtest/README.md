@@ -319,7 +319,7 @@ Skewed 模式不使用 `linear` 或 `java-spike`。每个 Pod 启动后直接施
 - 内存：`500Mi`
 - CPU：`200m`
 
-触发三组 Deployment 同时滚动升级，并删除新 Pod 模板里的节点亲和：
+触发三组 Deployment 轮流滚动升级，并删除新 Pod 模板里的节点亲和：
 
 稳态滚动升级，不临时增加 Pod，每个 Deployment 一次最多允许 1 个不可用：
 
@@ -340,10 +340,13 @@ Skewed 模式不使用 `linear` 或 `java-spike`。每个 Pod 启动后直接施
 
 滚动升级时脚本会：
 
-- patch 三个 Deployment 的 RollingUpdate 策略。
-- patch 三个 Deployment 的 Pod template，设置 `affinity: null`。
+- 先处理 `cce-skewed-1`，等待它完成 rollout。
+- 再处理 `cce-skewed-2`，等待它完成 rollout。
+- 最后处理 `cce-skewed-3`，等待它完成 rollout。
+- 每个 Deployment 都会 patch RollingUpdate 策略。
+- 每个 Deployment 都会 patch Pod template，设置 `affinity: null`。
 - 更新 `loadtest.volcano.sh/rollout-id`，触发新 ReplicaSet。
-- 等待三个 Deployment 全部完成 rollout。
+- 每个 Deployment 完成后才进入下一个 Deployment。
 
 `rollout-skewed` 完成条件使用 Deployment `rollout status`。它不会额外等待同组所有 Pod Ready，避免旧 ReplicaSet 的 Terminating Pod 被宽 selector 匹配后导致脚本在 rollout 成功后继续阻塞。
 

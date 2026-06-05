@@ -21,6 +21,19 @@ assert_not_contains() {
   [[ "${haystack}" != *"${needle}"* ]] || fail "expected output not to contain: ${needle}"
 }
 
+assert_line_order() {
+  local haystack="$1"
+  shift
+  local previous_line=0
+  local needle line
+  for needle in "$@"; do
+    line="$(printf '%s\n' "${haystack}" | awk -v needle="${needle}" 'index($0, needle) { print NR; exit }')"
+    [[ -n "${line}" ]] || fail "expected output to contain ordered item: ${needle}"
+    [[ "${line}" -gt "${previous_line}" ]] || fail "expected ${needle} to appear after previous ordered item"
+    previous_line="${line}"
+  done
+}
+
 manifest="$(${SCRIPT} render)"
 
 [[ "${manifest}" != *"kind: Namespace"* ]] || fail "default render should not create or manage the default namespace"
@@ -160,6 +173,16 @@ assert_contains "${skewed_rollout_log}" '"affinity":null'
 assert_contains "${skewed_rollout_log}" "rollout status deployment/cce-skewed-1"
 assert_contains "${skewed_rollout_log}" "rollout status deployment/cce-skewed-2"
 assert_contains "${skewed_rollout_log}" "rollout status deployment/cce-skewed-3"
+assert_line_order "${skewed_rollout_log}" \
+  "patch deployment cce-skewed-1 --type merge -p {\"spec\":{\"strategy\"" \
+  "patch deployment cce-skewed-1 --type merge -p {\"spec\":{\"template\"" \
+  "rollout status deployment/cce-skewed-1" \
+  "patch deployment cce-skewed-2 --type merge -p {\"spec\":{\"strategy\"" \
+  "patch deployment cce-skewed-2 --type merge -p {\"spec\":{\"template\"" \
+  "rollout status deployment/cce-skewed-2" \
+  "patch deployment cce-skewed-3 --type merge -p {\"spec\":{\"strategy\"" \
+  "patch deployment cce-skewed-3 --type merge -p {\"spec\":{\"template\"" \
+  "rollout status deployment/cce-skewed-3"
 
 : > "${kubectl_log}"
 KUBECTL_LOG="${kubectl_log}" KUBECTL="${fake_kubectl}" WAIT_TIMEOUT=1s "${SCRIPT}" rollout-skewed --steady
@@ -174,5 +197,15 @@ assert_contains "${skewed_steady_rollout_log}" "rollout status deployment/cce-sk
 assert_contains "${skewed_steady_rollout_log}" "rollout status deployment/cce-skewed-2"
 assert_contains "${skewed_steady_rollout_log}" "rollout status deployment/cce-skewed-3"
 assert_not_contains "${skewed_steady_rollout_log}" "wait --for=condition=Ready pod"
+assert_line_order "${skewed_steady_rollout_log}" \
+  "patch deployment cce-skewed-1 --type merge -p {\"spec\":{\"strategy\"" \
+  "patch deployment cce-skewed-1 --type merge -p {\"spec\":{\"template\"" \
+  "rollout status deployment/cce-skewed-1" \
+  "patch deployment cce-skewed-2 --type merge -p {\"spec\":{\"strategy\"" \
+  "patch deployment cce-skewed-2 --type merge -p {\"spec\":{\"template\"" \
+  "rollout status deployment/cce-skewed-2" \
+  "patch deployment cce-skewed-3 --type merge -p {\"spec\":{\"strategy\"" \
+  "patch deployment cce-skewed-3 --type merge -p {\"spec\":{\"template\"" \
+  "rollout status deployment/cce-skewed-3"
 
 echo "PASS: run-deployment-load.sh behavior"
