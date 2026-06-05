@@ -33,6 +33,8 @@ JAVA_STEADY_CPU_MILLICORES="${JAVA_STEADY_CPU_MILLICORES:-200}"
 
 ROLLING_MAX_SURGE="${ROLLING_MAX_SURGE:-0}"
 ROLLING_MAX_UNAVAILABLE="${ROLLING_MAX_UNAVAILABLE:-5}"
+ROLLING_STEADY_MAX_SURGE="${ROLLING_STEADY_MAX_SURGE:-0}"
+ROLLING_STEADY_MAX_UNAVAILABLE="${ROLLING_STEADY_MAX_UNAVAILABLE:-1}"
 ROLLING_SAFE_MAX_SURGE="${ROLLING_SAFE_MAX_SURGE:-0}"
 ROLLING_SAFE_MAX_UNAVAILABLE="${ROLLING_SAFE_MAX_UNAVAILABLE:-${ROLLING_MAX_UNAVAILABLE}}"
 ROLLING_SURGE_MAX_SURGE="${ROLLING_SURGE_MAX_SURGE:-}"
@@ -67,8 +69,8 @@ Usage:
   $(basename "$0") apply-skewed
   $(basename "$0") wait
   $(basename "$0") wait-skewed
-  $(basename "$0") rollout [--safe|--surge] [maxSurge=25%] [maxUnavailable=0]
-  $(basename "$0") rollout-skewed [--safe|--surge] [maxSurge=25%] [maxUnavailable=0]
+  $(basename "$0") rollout [--safe|--steady|--surge] [maxSurge=25%] [maxUnavailable=0]
+  $(basename "$0") rollout-skewed [--safe|--steady|--surge] [maxSurge=25%] [maxUnavailable=0]
   $(basename "$0") observe
   $(basename "$0") watch-waterline
   $(basename "$0") check-adapter [--print-only]
@@ -87,6 +89,8 @@ Common environment variables:
   LOAD_PROFILE               linear|java-spike|request-fixed, default: ${LOAD_PROFILE}
   REQUEST_FIXED_MEMORY_MI    request-fixed memory pressure in Mi, default: MEMORY_REQUEST
   REQUEST_FIXED_CPU_MILLICORES request-fixed CPU pressure in millicores, default: CPU_REQUEST
+  ROLLING_STEADY_MAX_SURGE default steady maxSurge: ${ROLLING_STEADY_MAX_SURGE}
+  ROLLING_STEADY_MAX_UNAVAILABLE default steady maxUnavailable: ${ROLLING_STEADY_MAX_UNAVAILABLE}
   ROLLING_MAX_SURGE          default Deployment maxSurge: ${ROLLING_MAX_SURGE}
   ROLLING_MAX_UNAVAILABLE    default Deployment maxUnavailable: ${ROLLING_MAX_UNAVAILABLE}
   ROLLING_SURGE_MAX_SURGE    rollout --surge maxSurge: ${ROLLING_SURGE_MAX_SURGE}
@@ -647,6 +651,14 @@ wait_skewed_ready() {
   "${KUBECTL}" -n "${NAMESPACE}" wait --for=condition=Ready "pod" -l "loadtest.volcano.sh/group=${SKEWED_DEPLOYMENT_PREFIX}" --timeout="${WAIT_TIMEOUT}"
 }
 
+wait_skewed_rollout_status() {
+  require_cmd "${KUBECTL}"
+  for idx in 1 2 3; do
+    deployment_name="$(skewed_deployment_name "${idx}")"
+    "${KUBECTL}" -n "${NAMESPACE}" rollout status "deployment/${deployment_name}" --timeout="${WAIT_TIMEOUT}"
+  done
+}
+
 patch_deployment_rollout_strategy() {
   deployment_name="$1"
   shift
@@ -658,12 +670,16 @@ patch_deployment_rollout_strategy() {
       surge="${ROLLING_SAFE_MAX_SURGE}"
       unavailable="${ROLLING_SAFE_MAX_UNAVAILABLE}"
       ;;
+    --steady)
+      surge="${ROLLING_STEADY_MAX_SURGE}"
+      unavailable="${ROLLING_STEADY_MAX_UNAVAILABLE}"
+      ;;
     --surge)
       surge="${ROLLING_SURGE_MAX_SURGE}"
       unavailable="${ROLLING_SURGE_MAX_UNAVAILABLE}"
       ;;
     *)
-      echo "invalid rollout mode: ${mode}; expected --safe or --surge" >&2
+      echo "invalid rollout mode: ${mode}; expected --safe, --steady, or --surge" >&2
       exit 1
       ;;
   esac
@@ -692,7 +708,7 @@ parse_rollout_args() {
   ROLLOUT_MAX_UNAVAILABLE_OVERRIDE=""
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
-      --safe|--surge)
+      --safe|--steady|--surge)
         ROLLOUT_MODE="$1"
         shift
         ;;
@@ -752,7 +768,7 @@ rollout_skewed() {
     "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${deployment_name}" --type merge \
       -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"loadtest.volcano.sh/rollout-id\":\"${rollout_id}\"}},\"spec\":{\"affinity\":null}}}}"
   done
-  wait_skewed_ready
+  wait_skewed_rollout_status
 }
 
 print_adapter_commands() {

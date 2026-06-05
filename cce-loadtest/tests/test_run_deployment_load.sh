@@ -161,4 +161,18 @@ assert_contains "${skewed_rollout_log}" "rollout status deployment/cce-skewed-1"
 assert_contains "${skewed_rollout_log}" "rollout status deployment/cce-skewed-2"
 assert_contains "${skewed_rollout_log}" "rollout status deployment/cce-skewed-3"
 
+: > "${kubectl_log}"
+KUBECTL_LOG="${kubectl_log}" KUBECTL="${fake_kubectl}" WAIT_TIMEOUT=1s "${SCRIPT}" rollout-skewed --steady
+skewed_steady_rollout_log="$(cat "${kubectl_log}")"
+assert_contains "${skewed_steady_rollout_log}" "patch deployment cce-skewed-1"
+assert_contains "${skewed_steady_rollout_log}" "patch deployment cce-skewed-2"
+assert_contains "${skewed_steady_rollout_log}" "patch deployment cce-skewed-3"
+assert_contains "${skewed_steady_rollout_log}" '"maxSurge":0'
+assert_contains "${skewed_steady_rollout_log}" '"maxUnavailable":1'
+assert_contains "${skewed_steady_rollout_log}" '"affinity":null'
+assert_contains "${skewed_steady_rollout_log}" "rollout status deployment/cce-skewed-1"
+assert_contains "${skewed_steady_rollout_log}" "rollout status deployment/cce-skewed-2"
+assert_contains "${skewed_steady_rollout_log}" "rollout status deployment/cce-skewed-3"
+assert_not_contains "${skewed_steady_rollout_log}" "wait --for=condition=Ready pod"
+
 echo "PASS: run-deployment-load.sh behavior"
