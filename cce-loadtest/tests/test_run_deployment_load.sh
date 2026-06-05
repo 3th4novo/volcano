@@ -27,7 +27,7 @@ assert_line_order() {
   local previous_line=0
   local needle line
   for needle in "$@"; do
-    line="$(printf '%s\n' "${haystack}" | awk -v needle="${needle}" 'index($0, needle) { print NR; exit }')"
+    line="$(printf '%s\n' "${haystack}" | awk -v needle="${needle}" -v previous_line="${previous_line}" 'NR > previous_line && index($0, needle) { print NR; exit }')"
     [[ -n "${line}" ]] || fail "expected output to contain ordered item: ${needle}"
     [[ "${line}" -gt "${previous_line}" ]] || fail "expected ${needle} to appear after previous ordered item"
     previous_line="${line}"
@@ -126,12 +126,18 @@ assert_contains "${fixed_override_manifest}" "cpu: 300m"
 
 tmpdir="$(mktemp -d)"
 fake_kubectl="${tmpdir}/kubectl"
+fake_sleep="${tmpdir}/sleep"
 kubectl_log="${tmpdir}/kubectl.log"
 cat > "${fake_kubectl}" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${KUBECTL_LOG}"
 EOF
 chmod +x "${fake_kubectl}"
+cat > "${fake_sleep}" <<'EOF'
+#!/usr/bin/env bash
+printf 'sleep %s\n' "$*" >> "${KUBECTL_LOG}"
+EOF
+chmod +x "${fake_sleep}"
 
 KUBECTL_LOG="${kubectl_log}" KUBECTL="${fake_kubectl}" WAIT_TIMEOUT=1s "${SCRIPT}" rollout --surge maxSurge=25% maxUnavailable=0
 rollout_log="$(cat "${kubectl_log}")"
@@ -163,7 +169,7 @@ assert_contains "${skewed_manifest}" "cpu: 200m"
 [[ "${skewed_manifest}" != *"LOAD_PROFILE"* ]] || fail "skewed deployments should not render ramp load profile env"
 
 : > "${kubectl_log}"
-KUBECTL_LOG="${kubectl_log}" KUBECTL="${fake_kubectl}" WAIT_TIMEOUT=1s "${SCRIPT}" rollout-skewed --surge maxSurge=25% maxUnavailable=0
+KUBECTL_LOG="${kubectl_log}" KUBECTL="${fake_kubectl}" SLEEP_CMD="${fake_sleep}" WAIT_TIMEOUT=1s "${SCRIPT}" rollout-skewed --surge maxSurge=25% maxUnavailable=0 >/dev/null
 skewed_rollout_log="$(cat "${kubectl_log}")"
 assert_contains "${skewed_rollout_log}" "patch deployment cce-skewed-1"
 assert_contains "${skewed_rollout_log}" "patch deployment cce-skewed-2"
@@ -177,15 +183,17 @@ assert_line_order "${skewed_rollout_log}" \
   "patch deployment cce-skewed-1 --type merge -p {\"spec\":{\"strategy\"" \
   "patch deployment cce-skewed-1 --type merge -p {\"spec\":{\"template\"" \
   "rollout status deployment/cce-skewed-1" \
+  "sleep 45" \
   "patch deployment cce-skewed-2 --type merge -p {\"spec\":{\"strategy\"" \
   "patch deployment cce-skewed-2 --type merge -p {\"spec\":{\"template\"" \
   "rollout status deployment/cce-skewed-2" \
+  "sleep 45" \
   "patch deployment cce-skewed-3 --type merge -p {\"spec\":{\"strategy\"" \
   "patch deployment cce-skewed-3 --type merge -p {\"spec\":{\"template\"" \
   "rollout status deployment/cce-skewed-3"
 
 : > "${kubectl_log}"
-KUBECTL_LOG="${kubectl_log}" KUBECTL="${fake_kubectl}" WAIT_TIMEOUT=1s "${SCRIPT}" rollout-skewed --steady
+KUBECTL_LOG="${kubectl_log}" KUBECTL="${fake_kubectl}" SLEEP_CMD="${fake_sleep}" WAIT_TIMEOUT=1s "${SCRIPT}" rollout-skewed --steady >/dev/null
 skewed_steady_rollout_log="$(cat "${kubectl_log}")"
 assert_contains "${skewed_steady_rollout_log}" "patch deployment cce-skewed-1"
 assert_contains "${skewed_steady_rollout_log}" "patch deployment cce-skewed-2"
@@ -201,9 +209,11 @@ assert_line_order "${skewed_steady_rollout_log}" \
   "patch deployment cce-skewed-1 --type merge -p {\"spec\":{\"strategy\"" \
   "patch deployment cce-skewed-1 --type merge -p {\"spec\":{\"template\"" \
   "rollout status deployment/cce-skewed-1" \
+  "sleep 45" \
   "patch deployment cce-skewed-2 --type merge -p {\"spec\":{\"strategy\"" \
   "patch deployment cce-skewed-2 --type merge -p {\"spec\":{\"template\"" \
   "rollout status deployment/cce-skewed-2" \
+  "sleep 45" \
   "patch deployment cce-skewed-3 --type merge -p {\"spec\":{\"strategy\"" \
   "patch deployment cce-skewed-3 --type merge -p {\"spec\":{\"template\"" \
   "rollout status deployment/cce-skewed-3"

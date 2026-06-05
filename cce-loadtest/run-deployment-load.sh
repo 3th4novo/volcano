@@ -55,8 +55,10 @@ SKEWED_REPLICAS_2="${SKEWED_REPLICAS_2:-6}"
 SKEWED_REPLICAS_3="${SKEWED_REPLICAS_3:-2}"
 SKEWED_MEMORY_MI="${SKEWED_MEMORY_MI:-500}"
 SKEWED_CPU_MILLICORES="${SKEWED_CPU_MILLICORES:-200}"
+SKEWED_ROLLOUT_METRICS_WAIT_SECONDS="${SKEWED_ROLLOUT_METRICS_WAIT_SECONDS:-45}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-10m}"
 KUBECTL="${KUBECTL:-kubectl}"
+SLEEP_CMD="${SLEEP_CMD:-sleep}"
 HOTSPOT_MEMORY_THRESHOLD="${HOTSPOT_MEMORY_THRESHOLD:-80}"
 PROMETHEUS_URL="${PROMETHEUS_URL:-}"
 
@@ -101,6 +103,7 @@ Common environment variables:
   SKEWED_REPLICAS_1          default: ${SKEWED_REPLICAS_1}
   SKEWED_REPLICAS_2          default: ${SKEWED_REPLICAS_2}
   SKEWED_REPLICAS_3          default: ${SKEWED_REPLICAS_3}
+  SKEWED_ROLLOUT_METRICS_WAIT_SECONDS seconds to wait between skewed rollouts: ${SKEWED_ROLLOUT_METRICS_WAIT_SECONDS}
   PROMETHEUS_URL             optional, for observe queries
 EOF
 }
@@ -659,6 +662,17 @@ wait_skewed_rollout_status() {
   done
 }
 
+wait_between_skewed_rollouts() {
+  idx="$1"
+  [[ "${idx}" -lt 3 ]] || return 0
+  validate_non_negative_integer "SKEWED_ROLLOUT_METRICS_WAIT_SECONDS" "${SKEWED_ROLLOUT_METRICS_WAIT_SECONDS}"
+  [[ "${SKEWED_ROLLOUT_METRICS_WAIT_SECONDS}" -gt 0 ]] || return 0
+
+  next_idx=$((idx + 1))
+  echo "waiting ${SKEWED_ROLLOUT_METRICS_WAIT_SECONDS}s for metrics collection before rolling out $(skewed_deployment_name "${next_idx}")"
+  "${SLEEP_CMD}" "${SKEWED_ROLLOUT_METRICS_WAIT_SECONDS}"
+}
+
 patch_deployment_rollout_strategy() {
   deployment_name="$1"
   shift
@@ -764,6 +778,7 @@ rollout_skewed() {
     "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${deployment_name}" --type merge \
       -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"loadtest.volcano.sh/rollout-id\":\"${rollout_id}\"}},\"spec\":{\"affinity\":null}}}}"
     "${KUBECTL}" -n "${NAMESPACE}" rollout status "deployment/${deployment_name}" --timeout="${WAIT_TIMEOUT}"
+    wait_between_skewed_rollouts "${idx}"
   done
 }
 

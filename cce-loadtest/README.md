@@ -341,12 +341,20 @@ Skewed 模式不使用 `linear` 或 `java-spike`。每个 Pod 启动后直接施
 滚动升级时脚本会：
 
 - 先处理 `cce-skewed-1`，等待它完成 rollout。
+- 等待 `45` 秒，让 Prometheus / adapter 完成指标采集。
 - 再处理 `cce-skewed-2`，等待它完成 rollout。
+- 再等待 `45` 秒，让 Prometheus / adapter 完成指标采集。
 - 最后处理 `cce-skewed-3`，等待它完成 rollout。
 - 每个 Deployment 都会 patch RollingUpdate 策略。
 - 每个 Deployment 都会 patch Pod template，设置 `affinity: null`。
 - 更新 `loadtest.volcano.sh/rollout-id`，触发新 ReplicaSet。
 - 每个 Deployment 完成后才进入下一个 Deployment。
+
+如果需要调整两个 Deployment 滚动升级之间的指标等待时间：
+
+```bash
+SKEWED_ROLLOUT_METRICS_WAIT_SECONDS=60 ./run-deployment-load.sh rollout-skewed --steady
+```
 
 `rollout-skewed` 完成条件使用 Deployment `rollout status`。它不会额外等待同组所有 Pod Ready，避免旧 ReplicaSet 的 Terminating Pod 被宽 selector 匹配后导致脚本在 rollout 成功后继续阻塞。
 
