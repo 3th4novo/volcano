@@ -15,6 +15,12 @@ assert_contains() {
   [[ "${haystack}" == *"${needle}"* ]] || fail "expected output to contain: ${needle}"
 }
 
+assert_not_contains() {
+  local haystack="$1"
+  local needle="$2"
+  [[ "${haystack}" != *"${needle}"* ]] || fail "expected output not to contain: ${needle}"
+}
+
 manifest="$(${SCRIPT} render)"
 
 [[ "${manifest}" != *"kind: Namespace"* ]] || fail "default render should not create or manage the default namespace"
@@ -118,6 +124,8 @@ KUBECTL_LOG="${kubectl_log}" KUBECTL="${fake_kubectl}" WAIT_TIMEOUT=1s "${SCRIPT
 rollout_log="$(cat "${kubectl_log}")"
 assert_contains "${rollout_log}" '"maxSurge":"25%"'
 assert_contains "${rollout_log}" '"maxUnavailable":0'
+assert_contains "${rollout_log}" "rollout status deployment/cce-resource-consumer"
+assert_not_contains "${rollout_log}" "wait --for=condition=Ready pod"
 
 skewed_manifest="$(${SCRIPT} render-skewed)"
 assert_contains "${skewed_manifest}" "name: cce-skewed-1"

@@ -633,6 +633,11 @@ wait_ready() {
   "${KUBECTL}" -n "${NAMESPACE}" wait --for=condition=Ready "pod" -l "app.kubernetes.io/name=${DEPLOYMENT_NAME}" --timeout="${WAIT_TIMEOUT}"
 }
 
+wait_rollout_status() {
+  require_cmd "${KUBECTL}"
+  "${KUBECTL}" -n "${NAMESPACE}" rollout status "deployment/${DEPLOYMENT_NAME}" --timeout="${WAIT_TIMEOUT}"
+}
+
 wait_skewed_ready() {
   require_cmd "${KUBECTL}"
   for idx in 1 2 3; do
@@ -730,7 +735,7 @@ rollout() {
   rollout_id="$(date +%Y%m%d%H%M%S)"
   "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${DEPLOYMENT_NAME}" --type merge \
     -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"loadtest.volcano.sh/rollout-id\":\"${rollout_id}\"}}}}}"
-  wait_ready
+  wait_rollout_status
 }
 
 rollout_skewed() {
