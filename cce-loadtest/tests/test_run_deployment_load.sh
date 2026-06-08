@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="${ROOT_DIR}/run-deployment-load.sh"
+BEST_EFFORT_SCRIPT="${ROOT_DIR}/run-best-effort-load.sh"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -126,6 +127,35 @@ assert_contains "${fixed_override_manifest}" "REQUEST_FIXED_CPU_MILLICORES=\"150
 assert_contains "${fixed_override_manifest}" "memory: 1Gi"
 assert_contains "${fixed_override_manifest}" "cpu: 300m"
 
+best_effort_manifest="$(POD_QOS_CLASS=best-effort ${SCRIPT} render)"
+assert_contains "${best_effort_manifest}" "kind: Deployment"
+assert_contains "${best_effort_manifest}" "name: cce-resource-consumer"
+assert_contains "${best_effort_manifest}" "schedulerName: volcano"
+assert_contains "${best_effort_manifest}" "LOAD_PROFILE=\"linear\""
+assert_not_contains "${best_effort_manifest}" "        resources:"
+assert_not_contains "${best_effort_manifest}" "          requests:"
+assert_not_contains "${best_effort_manifest}" "          limits:"
+assert_not_contains "${best_effort_manifest}" "cpu: 200m"
+assert_not_contains "${best_effort_manifest}" "cpu: 250m"
+assert_not_contains "${best_effort_manifest}" "memory: 500Mi"
+assert_not_contains "${best_effort_manifest}" "memory: 600Mi"
+
+best_effort_fixed_manifest="$(POD_QOS_CLASS=best-effort LOAD_PROFILE=request-fixed ${SCRIPT} render)"
+assert_contains "${best_effort_fixed_manifest}" "LOAD_PROFILE=\"request-fixed\""
+assert_contains "${best_effort_fixed_manifest}" "REQUEST_FIXED_MEMORY_MI=\"500\""
+assert_contains "${best_effort_fixed_manifest}" "REQUEST_FIXED_CPU_MILLICORES=\"200\""
+assert_not_contains "${best_effort_fixed_manifest}" "        resources:"
+
+best_effort_fixed_override_manifest="$(POD_QOS_CLASS=best-effort LOAD_PROFILE=request-fixed REQUEST_FIXED_MEMORY_MI=700 REQUEST_FIXED_CPU_MILLICORES=150 ${SCRIPT} render)"
+assert_contains "${best_effort_fixed_override_manifest}" "REQUEST_FIXED_MEMORY_MI=\"700\""
+assert_contains "${best_effort_fixed_override_manifest}" "REQUEST_FIXED_CPU_MILLICORES=\"150\""
+assert_not_contains "${best_effort_fixed_override_manifest}" "        resources:"
+
+best_effort_wrapper_manifest="$(${BEST_EFFORT_SCRIPT} render)"
+assert_contains "${best_effort_wrapper_manifest}" "name: cce-best-effort-consumer"
+assert_contains "${best_effort_wrapper_manifest}" "scheduling.volcano.sh/queue-name: cce-best-effort"
+assert_not_contains "${best_effort_wrapper_manifest}" "        resources:"
+
 tmpdir="$(mktemp -d)"
 fake_kubectl="${tmpdir}/kubectl"
 fake_sleep="${tmpdir}/sleep"
@@ -166,6 +196,12 @@ assert_contains "${skewed_manifest}" "schedulerName: volcano"
 assert_contains "${skewed_manifest}" "scheduling.volcano.sh/queue-name: cce-loadtest"
 assert_contains "${skewed_manifest}" "memory: 500Mi"
 assert_contains "${skewed_manifest}" "cpu: 200m"
+
+best_effort_skewed_manifest="$(POD_QOS_CLASS=best-effort ${SCRIPT} render-skewed)"
+assert_contains "${best_effort_skewed_manifest}" "name: cce-skewed-1"
+assert_contains "${best_effort_skewed_manifest}" "FIXED_MEMORY_MI=\"500\""
+assert_contains "${best_effort_skewed_manifest}" "FIXED_CPU_MILLICORES=\"200\""
+assert_not_contains "${best_effort_skewed_manifest}" "        resources:"
 
 [[ "${skewed_manifest}" != *"key: metadata.name"* ]] || fail "skewed node affinity should use kubernetes.io/hostname"
 [[ "${skewed_manifest}" != *"LOAD_PROFILE"* ]] || fail "skewed deployments should not render ramp load profile env"

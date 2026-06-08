@@ -9,6 +9,7 @@ IMAGE="${IMAGE:-swr.cn-north-7.myhuaweicloud.com/paas_cce_wwx588067/resource_con
 IMAGE_PULL_SECRET="${IMAGE_PULL_SECRET:-default-secret}"
 SWR_VERSION="${SWR_VERSION:-Shared Edition}"
 REPLICAS="${REPLICAS:-10}"
+POD_QOS_CLASS="${POD_QOS_CLASS:-burstable}"
 
 CPU_REQUEST="${CPU_REQUEST:-200m}"
 CPU_LIMIT="${CPU_LIMIT:-250m}"
@@ -88,9 +89,10 @@ Common environment variables:
   IMAGE_PULL_SECRET          default: ${IMAGE_PULL_SECRET}
   SWR_VERSION                default: ${SWR_VERSION}
   REPLICAS                   default: ${REPLICAS}
+  POD_QOS_CLASS              burstable|best-effort, default: ${POD_QOS_CLASS}
   LOAD_PROFILE               linear|java-spike|request-fixed, default: ${LOAD_PROFILE}
-  REQUEST_FIXED_MEMORY_MI    request-fixed memory pressure in Mi, default: MEMORY_REQUEST
-  REQUEST_FIXED_CPU_MILLICORES request-fixed CPU pressure in millicores, default: CPU_REQUEST
+  REQUEST_FIXED_MEMORY_MI    request-fixed memory pressure in Mi, default: MEMORY_REQUEST or TARGET_MEMORY_MI for best-effort
+  REQUEST_FIXED_CPU_MILLICORES request-fixed CPU pressure in millicores, default: CPU_REQUEST or TARGET_CPU_MILLICORES for best-effort
   ROLLING_STEADY_MAX_SURGE default steady maxSurge: ${ROLLING_STEADY_MAX_SURGE}
   ROLLING_STEADY_MAX_UNAVAILABLE default steady maxUnavailable: ${ROLLING_STEADY_MAX_UNAVAILABLE}
   ROLLING_MAX_SURGE          default Deployment maxSurge: ${ROLLING_MAX_SURGE}
@@ -143,6 +145,17 @@ validate_non_negative_integer() {
   fi
 }
 
+validate_pod_qos_class() {
+  case "${POD_QOS_CLASS}" in
+    burstable|best-effort)
+      ;;
+    *)
+      echo "POD_QOS_CLASS must be burstable or best-effort" >&2
+      exit 1
+      ;;
+  esac
+}
+
 cpu_request_to_millicores() {
   local value="$1"
   if [[ "${value}" =~ ^([0-9]+)m$ ]]; then
@@ -164,6 +177,24 @@ memory_request_to_mi() {
   else
     echo "MEMORY_REQUEST must use Mi or Gi, for example 500Mi or 1Gi" >&2
     exit 1
+  fi
+}
+
+request_fixed_default_memory_mi() {
+  validate_pod_qos_class
+  if [[ "${POD_QOS_CLASS}" == "best-effort" ]]; then
+    printf '%s' "${TARGET_MEMORY_MI}"
+  else
+    memory_request_to_mi "${MEMORY_REQUEST}"
+  fi
+}
+
+request_fixed_default_cpu_millicores() {
+  validate_pod_qos_class
+  if [[ "${POD_QOS_CLASS}" == "best-effort" ]]; then
+    printf '%s' "${TARGET_CPU_MILLICORES}"
+  else
+    cpu_request_to_millicores "${CPU_REQUEST}"
   fi
 }
 
@@ -190,12 +221,29 @@ EOF
   fi
 }
 
+render_container_resources() {
+  validate_pod_qos_class
+  if [[ "${POD_QOS_CLASS}" == "best-effort" ]]; then
+    return 0
+  fi
+
+  cat <<EOF
+        resources:
+          requests:
+            cpu: ${CPU_REQUEST}
+            memory: ${MEMORY_REQUEST}
+          limits:
+            cpu: ${CPU_LIMIT}
+            memory: ${MEMORY_LIMIT}
+EOF
+}
+
 render_manifest() {
   validate_int_or_percent "ROLLING_MAX_SURGE" "${ROLLING_MAX_SURGE}"
   validate_int_or_percent "ROLLING_MAX_UNAVAILABLE" "${ROLLING_MAX_UNAVAILABLE}"
   local request_memory_mi request_cpu_millicores request_fixed_memory_mi request_fixed_cpu_millicores
-  request_memory_mi="$(memory_request_to_mi "${MEMORY_REQUEST}")"
-  request_cpu_millicores="$(cpu_request_to_millicores "${CPU_REQUEST}")"
+  request_memory_mi="$(request_fixed_default_memory_mi)"
+  request_cpu_millicores="$(request_fixed_default_cpu_millicores)"
   request_fixed_memory_mi="${REQUEST_FIXED_MEMORY_MI:-${request_memory_mi}}"
   request_fixed_cpu_millicores="${REQUEST_FIXED_CPU_MILLICORES:-${request_cpu_millicores}}"
   validate_non_negative_integer "REQUEST_FIXED_MEMORY_MI" "${request_fixed_memory_mi}"
@@ -427,13 +475,7 @@ $(render_image_pull_secrets)
           value: "${JAVA_STEADY_MEMORY_MI}"
         - name: JAVA_STEADY_CPU_MILLICORES
           value: "${JAVA_STEADY_CPU_MILLICORES}"
-        resources:
-          requests:
-            cpu: ${CPU_REQUEST}
-            memory: ${MEMORY_REQUEST}
-          limits:
-            cpu: ${CPU_LIMIT}
-            memory: ${MEMORY_LIMIT}
+$(render_container_resources)
         volumeMounts:
         - name: load-scripts
           mountPath: /scripts
@@ -582,13 +624,7 @@ $(render_image_pull_secrets)
         command:
         - /bin/sh
         - /scripts/fixed-load.sh
-        resources:
-          requests:
-            cpu: ${CPU_REQUEST}
-            memory: ${MEMORY_REQUEST}
-          limits:
-            cpu: ${CPU_LIMIT}
-            memory: ${MEMORY_LIMIT}
+$(render_container_resources)
         volumeMounts:
         - name: load-scripts
           mountPath: /scripts

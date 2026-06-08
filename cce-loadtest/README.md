@@ -4,7 +4,7 @@
 
 - 批量下发可配置副本数的 Deployment，默认 10 副本
 - 每个 Pod 支持三种可配置加压曲线：`linear` 线性升压，`java-spike` 启动陡增后回落到平稳水位，`request-fixed` 启动后按 request 值直接加压并保持
-- 每个 Pod 资源声明为 `cpu request=200m, limit=250m`，`memory request=500Mi, limit=600Mi`
+- 默认每个 Pod 资源声明为 `cpu request=200m, limit=250m`，`memory request=500Mi, limit=600Mi`；也支持 BestEffort 模式，不设置 request/limit
 - 滚动升级场景，包括稳态升级和 surge 压力升级
 - 通过 Prometheus / Prometheus Adapter 观测每个节点实时水位和热点概率
 
@@ -35,6 +35,7 @@
 ## 文件
 
 - `run-deployment-load.sh`: 主脚本，负责生成资源、下发、滚动升级、观测和 adapter 检查。
+- `run-best-effort-load.sh`: BestEffort 包装脚本，复用主脚本能力，但默认不渲染 request/limit。
 - `dashboards/grafana-cce-loadtest.json`: Grafana Dashboard 导入模板。
 - `tests/test_run_deployment_load.sh`: 本地行为测试，不连接集群。
 
@@ -197,6 +198,57 @@ REQUEST_FIXED_CPU_MILLICORES=150 \
 ```
 
 上面的配置会让 Pod 的资源申请保持为 `1Gi/300m`，但启动后的真实压力保持在约 `700Mi/150m`。`REQUEST_FIXED_MEMORY_MI` 的单位固定为 `Mi`，`REQUEST_FIXED_CPU_MILLICORES` 的单位固定为 millicores，配置时只填写整数。加压值如果超过 limit，内存可能触发 OOMKilled，CPU 会被 CFS throttling 限流。
+
+### 4.1 下发 BestEffort Pod
+
+如果要模拟不设置 request/limit 的 BestEffort Pod，直接使用包装脚本：
+
+```bash
+./run-best-effort-load.sh render
+./run-best-effort-load.sh apply
+./run-best-effort-load.sh wait
+```
+
+`run-best-effort-load.sh` 默认设置：
+
+```bash
+POD_QOS_CLASS=best-effort
+DEPLOYMENT_NAME=cce-best-effort-consumer
+QUEUE_NAME=cce-best-effort
+```
+
+其他能力和主脚本一致，可以继续使用：
+
+```bash
+LOAD_PROFILE=request-fixed ./run-best-effort-load.sh apply
+./run-best-effort-load.sh rollout --surge maxSurge=25% maxUnavailable=0
+./run-best-effort-load.sh observe
+./run-best-effort-load.sh cleanup
+```
+
+BestEffort 模式只是不渲染 `resources.requests` 和 `resources.limits`，Pod 内部仍会按 `LOAD_PROFILE` 运行 `stress` 产生真实 CPU / 内存压力。`LOAD_PROFILE=request-fixed` 在 BestEffort 下没有 request 可读取，因此默认使用 `TARGET_MEMORY_MI` 和 `TARGET_CPU_MILLICORES` 作为稳定压力值；默认仍是 `500Mi/200m`。如果需要固定为其他真实压力，继续显式设置：
+
+```bash
+LOAD_PROFILE=request-fixed \
+REQUEST_FIXED_MEMORY_MI=700 \
+REQUEST_FIXED_CPU_MILLICORES=150 \
+./run-best-effort-load.sh apply
+```
+
+也可以不用包装脚本，直接在主脚本上设置：
+
+```bash
+POD_QOS_CLASS=best-effort ./run-deployment-load.sh apply
+```
+
+注意：如果 namespace 中配置了 `LimitRange` 默认 request/limit，Kubernetes 可能会在 Pod 创建时自动注入资源声明，此时 Pod 不再是 BestEffort。测试前可以检查：
+
+```bash
+kubectl -n default get limitrange
+kubectl -n default get pod <pod-name> -o jsonpath='{.status.qosClass}{"\n"}'
+```
+
+BestEffort Pod 没有 memory limit，但在节点出现资源压力时也是最优先被驱逐的 QoS 类型。建议先用默认 `REPLICAS=10` 验证分布和水位，再逐步放大副本数。
 
 也可以切换成 Java 类业务启动曲线：
 
