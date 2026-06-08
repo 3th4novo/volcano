@@ -22,14 +22,14 @@ ruby -e '
   dashboard = JSON.parse(File.read(ARGV.fetch(0)))
   expected_titles = [
     "Scheduled CCE pods per node",
-    "Per-node hotspot probability, last 5m",
-    "Per-node idle probability, last 5m",
-    "Peak CPU waterline, last 5m",
-    "Peak memory waterline, last 5m",
-    "Per-node CPU waterline",
-    "Per-node memory waterline",
-    "CPU waterline variance across nodes",
-    "Memory waterline variance across nodes"
+    "Per-node hotspot probability, last 10m",
+    "Per-node idle probability, last 10m",
+    "Peak CPU waterline, last 10m",
+    "Peak memory waterline, last 10m",
+    "Per-node CPU waterline, 10m avg",
+    "Per-node memory waterline, 10m avg",
+    "CPU waterline variance across nodes, 10m avg",
+    "Memory waterline variance across nodes, 10m avg"
   ]
   actual_titles = dashboard.fetch("panels").map { |panel| panel.fetch("title") }
   abort("expected exactly 9 dashboard panels") unless actual_titles.length == 9
@@ -56,26 +56,26 @@ assert_contains "${dashboard}" "\"name\": \"node\""
 assert_contains "${dashboard}" "label_values(node_memory_MemTotal_bytes, instance)"
 assert_contains "${dashboard}" "\"title\": \"Scheduled CCE pods per node\""
 assert_contains "${dashboard}" "kube_pod_info{namespace=\\\"default\\\",pod=~\\\".*cce.*\\\",node!=\\\"\\\"}"
-assert_contains "${dashboard}" "\"title\": \"Per-node hotspot probability, last 5m\""
+assert_contains "${dashboard}" "\"title\": \"Per-node hotspot probability, last 10m\""
 assert_contains "${dashboard}" "> bool 80"
-assert_contains "${dashboard}" "[5m:30s]"
-assert_contains "${dashboard}" "\"title\": \"Per-node idle probability, last 5m\""
+assert_contains "${dashboard}" "[10m:30s]"
+assert_contains "${dashboard}" "\"title\": \"Per-node idle probability, last 10m\""
 assert_contains "${dashboard}" "< bool 30"
-assert_contains "${dashboard}" "\"title\": \"Peak CPU waterline, last 5m\""
-assert_contains "${dashboard}" "max_over_time((100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\\\"idle\\\",instance=~\\\"\$node\\\"}[1m]))))[5m:30s])"
-assert_contains "${dashboard}" "\"title\": \"Peak memory waterline, last 5m\""
-assert_contains "${dashboard}" "max_over_time((100 * (1 - node_memory_MemAvailable_bytes{instance=~\\\"\$node\\\"} / node_memory_MemTotal_bytes{instance=~\\\"\$node\\\"}))[5m:30s])"
-assert_contains "${dashboard}" "\"title\": \"Per-node CPU waterline\""
+assert_contains "${dashboard}" "\"title\": \"Peak CPU waterline, last 10m\""
+assert_contains "${dashboard}" "max_over_time((100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode=\\\"idle\\\",instance=~\\\"\$node\\\"}[5m]))))[10m:30s])"
+assert_contains "${dashboard}" "\"title\": \"Peak memory waterline, last 10m\""
+assert_contains "${dashboard}" "max_over_time((100 * (1 - node_memory_MemAvailable_bytes{instance=~\\\"\$node\\\"} / node_memory_MemTotal_bytes{instance=~\\\"\$node\\\"}))[10m:30s])"
+assert_contains "${dashboard}" "\"title\": \"Per-node CPU waterline, 10m avg\""
 assert_contains "${dashboard}" "node_cpu_seconds_total{mode=\\\"idle\\\",instance=~\\\"\$node\\\"}"
-assert_contains "${dashboard}" "\"title\": \"Per-node memory waterline\""
+assert_contains "${dashboard}" "\"title\": \"Per-node memory waterline, 10m avg\""
 assert_contains "${dashboard}" "node_memory_MemAvailable_bytes{instance=~\\\"\$node\\\"}"
-assert_contains "${dashboard}" "\"title\": \"CPU waterline variance across nodes\""
-assert_contains "${dashboard}" "stdvar(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\\\"idle\\\",instance=~\\\"\$node\\\"}[1m]))))"
-assert_contains "${dashboard}" "\"title\": \"Memory waterline variance across nodes\""
-assert_contains "${dashboard}" "stdvar(100 * (1 - node_memory_MemAvailable_bytes{instance=~\\\"\$node\\\"} / node_memory_MemTotal_bytes{instance=~\\\"\$node\\\"}))"
+assert_contains "${dashboard}" "\"title\": \"CPU waterline variance across nodes, 10m avg\""
+assert_contains "${dashboard}" "stdvar(100 * avg_over_time((1 - avg by (instance) (irate(node_cpu_seconds_total{mode=\\\"idle\\\",instance=~\\\"\$node\\\"}[5m])))[10m:30s]))"
+assert_contains "${dashboard}" "\"title\": \"Memory waterline variance across nodes, 10m avg\""
+assert_contains "${dashboard}" "stdvar(100 * avg_over_time((1 - node_memory_MemAvailable_bytes{instance=~\\\"\$node\\\"} / node_memory_MemTotal_bytes{instance=~\\\"\$node\\\"})[10m:30s]))"
 
-if [[ "${dashboard}" == *"10m"* || "${dashboard}" == *"30m"* ]]; then
-  fail "expected all dashboard statistical windows to use 5m, found 10m or 30m"
+if [[ "${dashboard}" == *"5m:30s"* || "${dashboard}" == *"[1m]"* || "${dashboard}" =~ (^|[^i])rate\(node_cpu_seconds_total || "${dashboard}" == *"30m"* ]]; then
+  fail "expected all dashboard statistical windows to use adapter-aligned 10m:30s windows"
 fi
 
 for removed in \

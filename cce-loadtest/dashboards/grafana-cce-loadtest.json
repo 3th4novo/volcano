@@ -128,12 +128,12 @@
       },
       "targets": [
         {
-          "expr": "100 * avg_over_time(((max by (instance) (label_replace(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node\"}[1m]))), \"resource\", \"cpu\", \"instance\", \".*\") or label_replace(100 * (1 - node_memory_MemAvailable_bytes{instance=~\"$node\"} / node_memory_MemTotal_bytes{instance=~\"$node\"}), \"resource\", \"memory\", \"instance\", \".*\"))) > bool 80)[5m:30s])",
+          "expr": "100 * avg_over_time(((max by (instance) (label_replace(100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node\"}[5m]))), \"resource\", \"cpu\", \"instance\", \".*\") or label_replace(100 * (1 - node_memory_MemAvailable_bytes{instance=~\"$node\"} / node_memory_MemTotal_bytes{instance=~\"$node\"}), \"resource\", \"memory\", \"instance\", \".*\"))) > bool 80)[10m:30s])",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
-      "title": "Per-node hotspot probability, last 5m",
+      "title": "Per-node hotspot probability, last 10m",
       "type": "timeseries"
     },
     {
@@ -190,12 +190,12 @@
       },
       "targets": [
         {
-          "expr": "100 * avg_over_time(((max by (instance) (label_replace(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node\"}[1m]))), \"resource\", \"cpu\", \"instance\", \".*\") or label_replace(100 * (1 - node_memory_MemAvailable_bytes{instance=~\"$node\"} / node_memory_MemTotal_bytes{instance=~\"$node\"}), \"resource\", \"memory\", \"instance\", \".*\"))) < bool 30)[5m:30s])",
+          "expr": "100 * avg_over_time(((max by (instance) (label_replace(100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node\"}[5m]))), \"resource\", \"cpu\", \"instance\", \".*\") or label_replace(100 * (1 - node_memory_MemAvailable_bytes{instance=~\"$node\"} / node_memory_MemTotal_bytes{instance=~\"$node\"}), \"resource\", \"memory\", \"instance\", \".*\"))) < bool 30)[10m:30s])",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
-      "title": "Per-node idle probability, last 5m",
+      "title": "Per-node idle probability, last 10m",
       "type": "timeseries"
     },
     {
@@ -252,12 +252,12 @@
       },
       "targets": [
         {
-          "expr": "max_over_time((100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node\"}[1m]))))[5m:30s])",
+          "expr": "max_over_time((100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node\"}[5m]))))[10m:30s])",
           "legendFormat": "CPU {{instance}}",
           "refId": "A"
         }
       ],
-      "title": "Peak CPU waterline, last 5m",
+      "title": "Peak CPU waterline, last 10m",
       "type": "timeseries"
     },
     {
@@ -314,12 +314,12 @@
       },
       "targets": [
         {
-          "expr": "max_over_time((100 * (1 - node_memory_MemAvailable_bytes{instance=~\"$node\"} / node_memory_MemTotal_bytes{instance=~\"$node\"}))[5m:30s])",
+          "expr": "max_over_time((100 * (1 - node_memory_MemAvailable_bytes{instance=~\"$node\"} / node_memory_MemTotal_bytes{instance=~\"$node\"}))[10m:30s])",
           "legendFormat": "Memory {{instance}}",
           "refId": "B"
         }
       ],
-      "title": "Peak memory waterline, last 5m",
+      "title": "Peak memory waterline, last 10m",
       "type": "timeseries"
     },
     {
@@ -376,12 +376,12 @@
       },
       "targets": [
         {
-          "expr": "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node\"}[1m])))",
+          "expr": "100 * avg_over_time((1 - avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node\"}[5m])))[10m:30s])",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
-      "title": "Per-node CPU waterline",
+      "title": "Per-node CPU waterline, 10m avg",
       "type": "timeseries"
     },
     {
@@ -438,12 +438,12 @@
       },
       "targets": [
         {
-          "expr": "100 * (1 - node_memory_MemAvailable_bytes{instance=~\"$node\"} / node_memory_MemTotal_bytes{instance=~\"$node\"})",
+          "expr": "100 * avg_over_time((1 - node_memory_MemAvailable_bytes{instance=~\"$node\"} / node_memory_MemTotal_bytes{instance=~\"$node\"})[10m:30s])",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
-      "title": "Per-node memory waterline",
+      "title": "Per-node memory waterline, 10m avg",
       "type": "timeseries"
     },
     {
@@ -499,12 +499,12 @@
       },
       "targets": [
         {
-          "expr": "stdvar(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node\"}[1m]))))",
+          "expr": "stdvar(100 * avg_over_time((1 - avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node\"}[5m])))[10m:30s]))",
           "legendFormat": "CPU variance",
           "refId": "A"
         }
       ],
-      "title": "CPU waterline variance across nodes",
+      "title": "CPU waterline variance across nodes, 10m avg",
       "type": "timeseries"
     },
     {
@@ -560,12 +560,12 @@
       },
       "targets": [
         {
-          "expr": "stdvar(100 * (1 - node_memory_MemAvailable_bytes{instance=~\"$node\"} / node_memory_MemTotal_bytes{instance=~\"$node\"}))",
+          "expr": "stdvar(100 * avg_over_time((1 - node_memory_MemAvailable_bytes{instance=~\"$node\"} / node_memory_MemTotal_bytes{instance=~\"$node\"})[10m:30s]))",
           "legendFormat": "Memory variance",
           "refId": "A"
         }
       ],
-      "title": "Memory waterline variance across nodes",
+      "title": "Memory waterline variance across nodes, 10m avg",
       "type": "timeseries"
     }
   ],
@@ -618,13 +618,13 @@
     ]
   },
   "time": {
-    "from": "now-5m",
+    "from": "now-10m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "CCE Volcano Load Test",
   "uid": "cce-volcano-loadtest",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }

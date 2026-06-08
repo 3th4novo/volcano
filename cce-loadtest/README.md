@@ -400,62 +400,62 @@ Grafana Dashboard 现在只关注节点水位、节点间离散度和 Pod 分布
 count by (node) (kube_pod_info{namespace="default",pod=~".*cce.*",node!=""})
 ```
 
-各节点 CPU 水位：
+各节点 CPU 水位，使用与 Prometheus Adapter 一致的 10 分钟统计尺度：
 
 ```promql
-100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])))
+100 * avg_over_time((1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])))[10m:30s])
 ```
 
-各节点内存水位：
+各节点内存水位，使用与 Prometheus Adapter 一致的 10 分钟统计尺度：
 
 ```promql
-100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+100 * avg_over_time((1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)[10m:30s])
 ```
 
 ## 8. 热点出现概率
 
 当前热点定义为节点综合水位超过 `80%`。综合水位取 CPU 水位和内存水位的较高值；空闲定义为综合水位低于 `30%`。
 
-单节点过去 5 分钟热点概率：
+单节点过去 10 分钟热点概率：
 
 ```promql
 100 * avg_over_time(((max by (instance) (
-  label_replace(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))), "resource", "cpu", "instance", ".*")
+  label_replace(100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m]))), "resource", "cpu", "instance", ".*")
   or
   label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "resource", "memory", "instance", ".*")
-)) > bool 80)[5m:30s])
+)) > bool 80)[10m:30s])
 ```
 
-单节点过去 5 分钟空闲概率：
+单节点过去 10 分钟空闲概率：
 
 ```promql
 100 * avg_over_time(((max by (instance) (
-  label_replace(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))), "resource", "cpu", "instance", ".*")
+  label_replace(100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m]))), "resource", "cpu", "instance", ".*")
   or
   label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "resource", "memory", "instance", ".*")
-)) < bool 30)[5m:30s])
+)) < bool 30)[10m:30s])
 ```
 
-过去 5 分钟 CPU / 内存峰值水位：
+过去 10 分钟 CPU / 内存峰值水位：
 
 ```promql
-max_over_time((100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))))[5m:30s])
+max_over_time((100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m]))))[10m:30s])
 ```
 
 ```promql
-max_over_time((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))[5m:30s])
+max_over_time((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))[10m:30s])
 ```
 
 节点间 CPU 水位方差：
 
 ```promql
-stdvar(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))))
+stdvar(100 * avg_over_time((1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])))[10m:30s]))
 ```
 
 节点间内存水位方差：
 
 ```promql
-stdvar(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+stdvar(100 * avg_over_time((1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)[10m:30s]))
 ```
 
 增强点有效时，批量下发和滚动升级期间应看到：
@@ -480,14 +480,14 @@ cce-loadtest/dashboards/grafana-cce-loadtest.json
 Dashboard 只保留这些面板：
 
 - Scheduled CCE pods per node
-- Per-node hotspot probability, last 5m
-- Per-node idle probability, last 5m
-- Peak CPU waterline, last 5m
-- Peak memory waterline, last 5m
-- Per-node CPU waterline
-- Per-node memory waterline
-- CPU waterline variance across nodes
-- Memory waterline variance across nodes
+- Per-node hotspot probability, last 10m
+- Per-node idle probability, last 10m
+- Peak CPU waterline, last 10m
+- Peak memory waterline, last 10m
+- Per-node CPU waterline, 10m avg
+- Per-node memory waterline, 10m avg
+- CPU waterline variance across nodes, 10m avg
+- Memory waterline variance across nodes, 10m avg
 
 观察窗口建议：
 
