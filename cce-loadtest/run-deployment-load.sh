@@ -876,29 +876,29 @@ print_promql() {
 # Scheduled CCE pods per node:
 count by (node) (kube_pod_info{namespace="default",pod=~".*cce.*",node!=""})
 
-# Per-node hotspot probability over the last 10m; hotspot means max(cpu, memory) > 80%:
-100 * avg_over_time(((max by (instance) (label_replace(100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m]))), "resource", "cpu", "instance", ".*") or label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "resource", "memory", "instance", ".*"))) > bool 80)[10m:30s])
+# Per-node hotspot probability over the last 1m; hotspot means max(cpu, memory) > 80%:
+100 * avg_over_time(((max by (instance) (label_replace(100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[1m]))), "resource", "cpu", "instance", ".*") or label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "resource", "memory", "instance", ".*"))) > bool 80)[1m:15s])
 
-# Per-node idle probability over the last 10m; idle means max(cpu, memory) < 30%:
-100 * avg_over_time(((max by (instance) (label_replace(100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m]))), "resource", "cpu", "instance", ".*") or label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "resource", "memory", "instance", ".*"))) < bool 30)[10m:30s])
+# Per-node idle probability over the last 1m; idle means max(cpu, memory) < 30%:
+100 * avg_over_time(((max by (instance) (label_replace(100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[1m]))), "resource", "cpu", "instance", ".*") or label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "resource", "memory", "instance", ".*"))) < bool 30)[1m:15s])
 
-# Peak per-node CPU waterline over the last 10m:
-max_over_time((100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m]))))[10m:30s])
+# Peak per-node CPU waterline over the last 1m:
+max_over_time((100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[1m]))))[1m:15s])
 
-# Peak per-node memory waterline over the last 10m:
-max_over_time((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))[10m:30s])
+# Peak per-node memory waterline over the last 1m:
+max_over_time((100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))[1m:15s])
 
-# Per-node CPU waterline, 10m average:
-100 * avg_over_time((1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])))[10m:30s])
+# Per-node CPU waterline, 1m average:
+100 * avg_over_time((1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[1m])))[1m:15s])
 
-# Per-node memory waterline, 10m average:
-100 * avg_over_time((1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)[10m:30s])
+# Per-node memory waterline, 1m average:
+100 * avg_over_time((1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)[1m:15s])
 
-# CPU waterline variance across nodes, 10m average:
-stdvar(100 * avg_over_time((1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])))[10m:30s]))
+# CPU waterline variance across nodes, 1m average:
+stdvar(100 * avg_over_time((1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[1m])))[1m:15s]))
 
-# Memory waterline variance across nodes, 10m average:
-stdvar(100 * avg_over_time((1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)[10m:30s]))
+# Memory waterline variance across nodes, 1m average:
+stdvar(100 * avg_over_time((1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)[1m:15s]))
 EOF
 }
 
