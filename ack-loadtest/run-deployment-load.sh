@@ -2,7 +2,6 @@
 set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-default}"
-QUEUE_NAME="${QUEUE_NAME:-ack-loadtest}"
 DEPLOYMENT_NAME="${DEPLOYMENT_NAME:-ack-resource-consumer}"
 CONTAINER_NAME="${CONTAINER_NAME:-consumer}"
 IMAGE="${IMAGE:-crpi-5s8klfipd4nbbznk.cn-shanghai.personal.cr.aliyuncs.com/usage-batch/usage-batch:resource-consumer}"
@@ -16,9 +15,6 @@ MEMORY_REQUEST="${MEMORY_REQUEST:-512Mi}"
 MEMORY_LIMIT="${MEMORY_LIMIT:-1Gi}"
 REQUEST_FIXED_MEMORY_MI="${REQUEST_FIXED_MEMORY_MI:-}"
 REQUEST_FIXED_CPU_MILLICORES="${REQUEST_FIXED_CPU_MILLICORES:-}"
-
-QUEUE_CAPABILITY_CPU="${QUEUE_CAPABILITY_CPU:-20}"
-QUEUE_CAPABILITY_MEMORY="${QUEUE_CAPABILITY_MEMORY:-56Gi}"
 
 TARGET_MEMORY_MI="${TARGET_MEMORY_MI:-256}"
 MEMORY_STEP_MI="${MEMORY_STEP_MI:-25}"
@@ -78,7 +74,6 @@ Usage:
   $(basename "$0") rollout-skewed [--safe|--steady|--surge] [maxSurge=25%] [maxUnavailable=0]
   $(basename "$0") observe
   $(basename "$0") watch-waterline
-  $(basename "$0") check-adapter [--print-only]
   $(basename "$0") promql
   $(basename "$0") cleanup
   $(basename "$0") cleanup-skewed
@@ -86,13 +81,10 @@ Usage:
 Common environment variables:
   IMAGE                      resource_consumer image, default: ${IMAGE}
   NAMESPACE                  default: ${NAMESPACE}
-  QUEUE_NAME                 default: ${QUEUE_NAME}
   DEPLOYMENT_NAME            default: ${DEPLOYMENT_NAME}
   IMAGE_PULL_SECRET          default: ${IMAGE_PULL_SECRET}
   REPLICAS                   default: ${REPLICAS}
   POD_QOS_CLASS              burstable|best-effort, default: ${POD_QOS_CLASS}
-  QUEUE_CAPABILITY_CPU       default Volcano Queue CPU capability: ${QUEUE_CAPABILITY_CPU}
-  QUEUE_CAPABILITY_MEMORY    default Volcano Queue memory capability: ${QUEUE_CAPABILITY_MEMORY}
   LOAD_PROFILE               linear|java-spike|request-fixed, default: ${LOAD_PROFILE}
   REQUEST_FIXED_MEMORY_MI    request-fixed memory pressure in Mi, default: MEMORY_REQUEST or TARGET_MEMORY_MI for best-effort
   REQUEST_FIXED_CPU_MILLICORES request-fixed CPU pressure in millicores, default: CPU_REQUEST or TARGET_CPU_MILLICORES for best-effort
@@ -209,7 +201,7 @@ kind: Namespace
 metadata:
   name: ${NAMESPACE}
   labels:
-    app.kubernetes.io/name: volcano-ack-loadtest
+    app.kubernetes.io/name: ack-loadtest
 ---
 EOF
   fi
@@ -253,17 +245,6 @@ render_manifest() {
   validate_non_negative_integer "REQUEST_FIXED_CPU_MILLICORES" "${request_fixed_cpu_millicores}"
   render_namespace
   cat <<EOF
-apiVersion: scheduling.volcano.sh/v1beta1
-kind: Queue
-metadata:
-  name: ${QUEUE_NAME}
-spec:
-  weight: 1
-  reclaimable: false
-  capability:
-    cpu: "${QUEUE_CAPABILITY_CPU}"
-    memory: "${QUEUE_CAPABILITY_MEMORY}"
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -446,10 +427,9 @@ spec:
       labels:
         app.kubernetes.io/name: ${DEPLOYMENT_NAME}
       annotations:
-        scheduling.volcano.sh/queue-name: ${QUEUE_NAME}
-        loadtest.volcano.sh/rollout-id: "initial"
+        loadtest.ack.sh/rollout-id: "initial"
     spec:
-      schedulerName: volcano
+      schedulerName: default-scheduler
       terminationGracePeriodSeconds: 5
 $(render_image_pull_secrets)
       containers:
@@ -608,8 +588,8 @@ metadata:
   namespace: ${NAMESPACE}
   labels:
     app.kubernetes.io/name: ${deployment_name}
-    loadtest.volcano.sh/mode: skewed
-    loadtest.volcano.sh/group: ${SKEWED_DEPLOYMENT_PREFIX}
+    loadtest.ack.sh/mode: skewed
+    loadtest.ack.sh/group: ${SKEWED_DEPLOYMENT_PREFIX}
 spec:
   replicas: ${replicas}
   strategy:
@@ -624,13 +604,12 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: ${deployment_name}
-        loadtest.volcano.sh/mode: skewed
-        loadtest.volcano.sh/group: ${SKEWED_DEPLOYMENT_PREFIX}
+        loadtest.ack.sh/mode: skewed
+        loadtest.ack.sh/group: ${SKEWED_DEPLOYMENT_PREFIX}
       annotations:
-        scheduling.volcano.sh/queue-name: ${QUEUE_NAME}
-        loadtest.volcano.sh/rollout-id: "initial"
+        loadtest.ack.sh/rollout-id: "initial"
     spec:
-      schedulerName: volcano
+      schedulerName: default-scheduler
       terminationGracePeriodSeconds: 5
       affinity:
         nodeAffinity:
@@ -666,19 +645,6 @@ render_skewed_manifest() {
   validate_int_or_percent "ROLLING_MAX_SURGE" "${ROLLING_MAX_SURGE}"
   validate_int_or_percent "ROLLING_MAX_UNAVAILABLE" "${ROLLING_MAX_UNAVAILABLE}"
   render_namespace
-  cat <<EOF
-apiVersion: scheduling.volcano.sh/v1beta1
-kind: Queue
-metadata:
-  name: ${QUEUE_NAME}
-spec:
-  weight: 1
-  reclaimable: false
-  capability:
-    cpu: "${QUEUE_CAPABILITY_CPU}"
-    memory: "${QUEUE_CAPABILITY_MEMORY}"
----
-EOF
   render_skewed_scripts_configmap
   render_skewed_deployment 1
   render_skewed_deployment 2
@@ -712,7 +678,7 @@ wait_skewed_ready() {
     deployment_name="$(skewed_deployment_name "${idx}")"
     "${KUBECTL}" -n "${NAMESPACE}" rollout status "deployment/${deployment_name}" --timeout="${WAIT_TIMEOUT}"
   done
-  "${KUBECTL}" -n "${NAMESPACE}" wait --for=condition=Ready "pod" -l "loadtest.volcano.sh/group=${SKEWED_DEPLOYMENT_PREFIX}" --timeout="${WAIT_TIMEOUT}"
+  "${KUBECTL}" -n "${NAMESPACE}" wait --for=condition=Ready "pod" -l "loadtest.ack.sh/group=${SKEWED_DEPLOYMENT_PREFIX}" --timeout="${WAIT_TIMEOUT}"
 }
 
 wait_skewed_rollout_status() {
@@ -825,7 +791,7 @@ rollout() {
   patch_rollout_strategy "${ROLLOUT_MODE}" "${ROLLOUT_MAX_SURGE_OVERRIDE}" "${ROLLOUT_MAX_UNAVAILABLE_OVERRIDE}"
   rollout_id="$(date +%Y%m%d%H%M%S)"
   "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${DEPLOYMENT_NAME}" --type merge \
-    -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"loadtest.volcano.sh/rollout-id\":\"${rollout_id}\"}}}}}"
+    -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"loadtest.ack.sh/rollout-id\":\"${rollout_id}\"}}}}}"
   wait_rollout_status
 }
 
@@ -837,63 +803,10 @@ rollout_skewed() {
     deployment_name="$(skewed_deployment_name "${idx}")"
     patch_deployment_rollout_strategy "${deployment_name}" "${ROLLOUT_MODE}" "${ROLLOUT_MAX_SURGE_OVERRIDE}" "${ROLLOUT_MAX_UNAVAILABLE_OVERRIDE}"
     "${KUBECTL}" -n "${NAMESPACE}" patch deployment "${deployment_name}" --type merge \
-      -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"loadtest.volcano.sh/rollout-id\":\"${rollout_id}\"}},\"spec\":{\"affinity\":null}}}}"
+      -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"loadtest.ack.sh/rollout-id\":\"${rollout_id}\"}},\"spec\":{\"affinity\":null}}}}"
     "${KUBECTL}" -n "${NAMESPACE}" rollout status "deployment/${deployment_name}" --timeout="${WAIT_TIMEOUT}"
     wait_between_skewed_rollouts "${idx}"
   done
-}
-
-print_adapter_commands() {
-  cat <<EOF
-# Confirm Custom Metrics API discovery includes both node metrics:
-kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1" | grep -E "node_cpu_usage_avg|node_memory_usage_avg"
-
-# Confirm per-node CPU usage metric is exposed:
-kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/nodes/*/node_cpu_usage_avg"
-
-# Confirm per-node memory usage metric is exposed:
-kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/nodes/*/node_memory_usage_avg"
-
-# Expected scale for Volcano prometheus_adaptor mode:
-# values should be ratios around 0.00-1.00. Volcano multiplies Value.AsApproximateFloat64() by 100.
-EOF
-}
-
-check_adapter() {
-  if [[ "${1:-}" == "--print-only" ]]; then
-    print_adapter_commands
-    return 0
-  fi
-
-  require_cmd "${KUBECTL}"
-  discovery="$("${KUBECTL}" get --raw "/apis/custom.metrics.k8s.io/v1beta1")"
-  echo "${discovery}" | grep -q "node_cpu_usage_avg" || {
-    echo "node_cpu_usage_avg is not present in Custom Metrics API discovery" >&2
-    exit 1
-  }
-  echo "${discovery}" | grep -q "node_memory_usage_avg" || {
-    echo "node_memory_usage_avg is not present in Custom Metrics API discovery" >&2
-    exit 1
-  }
-
-  for metric in node_cpu_usage_avg node_memory_usage_avg; do
-    echo "checking ${metric}"
-    output="$("${KUBECTL}" get --raw "/apis/custom.metrics.k8s.io/v1beta1/nodes/*/${metric}")"
-    echo "${output}" | grep -q '"items"' || {
-      echo "${metric} returned no items" >&2
-      exit 1
-    }
-    echo "${output}" | grep -q '"kind":"Node"' || {
-      echo "${metric} did not return node-scoped metrics" >&2
-      exit 1
-    }
-    echo "${output}" | grep -q '"value"' || {
-      echo "${metric} did not return metric values" >&2
-      exit 1
-    }
-  done
-
-  echo "Custom Metrics API exposes node_cpu_usage_avg and node_memory_usage_avg."
 }
 
 print_promql() {
@@ -973,7 +886,6 @@ cleanup() {
   require_cmd "${KUBECTL}"
   "${KUBECTL}" -n "${NAMESPACE}" delete deployment "${DEPLOYMENT_NAME}" --ignore-not-found
   "${KUBECTL}" -n "${NAMESPACE}" delete configmap "${DEPLOYMENT_NAME}-scripts" --ignore-not-found
-  "${KUBECTL}" delete queue "${QUEUE_NAME}" --ignore-not-found
   if [[ "${NAMESPACE}" != "default" ]]; then
     "${KUBECTL}" delete namespace "${NAMESPACE}" --ignore-not-found
   fi
@@ -986,7 +898,6 @@ cleanup_skewed() {
     "${KUBECTL}" -n "${NAMESPACE}" delete deployment "${deployment_name}" --ignore-not-found
   done
   "${KUBECTL}" -n "${NAMESPACE}" delete configmap "${SKEWED_DEPLOYMENT_PREFIX}-scripts" --ignore-not-found
-  "${KUBECTL}" delete queue "${QUEUE_NAME}" --ignore-not-found
   if [[ "${NAMESPACE}" != "default" ]]; then
     "${KUBECTL}" delete namespace "${NAMESPACE}" --ignore-not-found
   fi
@@ -1025,9 +936,6 @@ case "${action}" in
     ;;
   watch-waterline)
     watch_waterline
-    ;;
-  check-adapter)
-    check_adapter "${1:-}"
     ;;
   promql)
     print_promql

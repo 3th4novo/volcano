@@ -50,8 +50,8 @@ ruby -e '
 
   variable_names = dashboard.fetch("templating").fetch("list").map { |variable| variable.fetch("name") }
   abort("unexpected variables: #{variable_names.inspect}") unless variable_names == ["datasource", "node"]
-  abort("unexpected dashboard title") unless dashboard.fetch("title") == "ACK Volcano Load Test"
-  abort("unexpected dashboard uid") unless dashboard.fetch("uid") == "ack-volcano-loadtest"
+  abort("unexpected dashboard title") unless dashboard.fetch("title") == "ACK Load Test"
+  abort("unexpected dashboard uid") unless dashboard.fetch("uid") == "ack-loadtest"
 ' "${DASHBOARD}"
 
 assert_contains "${dashboard}" "\"name\": \"node\""
@@ -84,6 +84,9 @@ for removed in \
   "Scheduled CCE pods per node" \
   "CCE Volcano Load Test" \
   "cce-volcano-loadtest" \
+  "ACK Volcano Load Test" \
+  "ack-volcano-loadtest" \
+  "volcano" \
   "Load-test memory usage" \
   "Load-test CPU cores" \
   "Load-test memory waterline" \

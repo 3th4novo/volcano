@@ -574,7 +574,7 @@
   "style": "dark",
   "tags": [
     "ack",
-    "volcano",
+    "loadtest",
     "loadtest"
   ],
   "templating": {
@@ -623,8 +623,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "ACK Volcano Load Test",
-  "uid": "ack-volcano-loadtest",
+  "title": "ACK Load Test",
+  "uid": "ack-loadtest",
   "version": 5,
   "weekStart": ""
 }
