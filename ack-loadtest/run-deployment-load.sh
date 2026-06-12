@@ -812,7 +812,7 @@ rollout_skewed() {
 print_promql() {
   cat <<EOF
 # Scheduled ACK pods per node:
-count by (node) (kube_pod_info{namespace="default",pod=~".*ack.*",node!=""})
+count by (node) (kube_pod_info{namespace="default",pod=~"ack-resource-consumer-.*",node!=""})
 
 # Per-node hotspot probability over the last 1m; hotspot means max(cpu, memory) > 80%:
 100 * avg_over_time(((max by (instance) (label_replace(100 * (1 - avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[1m]))), "resource", "cpu", "instance", ".*") or label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "resource", "memory", "instance", ".*"))) > bool 80)[1m:15s])

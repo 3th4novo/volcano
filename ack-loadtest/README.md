@@ -232,10 +232,10 @@ Grafana 导入：
 ack-loadtest/dashboards/grafana-ack-loadtest.json
 ```
 
-Pod 分布面板默认统计 `default` namespace 下名称包含 `ack` 的 Pod：
+Pod 分布面板默认统计 `default` namespace 下主压测 Deployment 的 Pod：
 
 ```promql
-count by (node) (kube_pod_info{namespace="default",pod=~".*ack.*",node!=""})
+count by (node) (kube_pod_info{namespace="default",pod=~"ack-resource-consumer-.*",node!=""})
 ```
 
 如果你改了 `NAMESPACE` 或 Deployment 名，需要同步调整 dashboard 的 Pod 过滤条件。

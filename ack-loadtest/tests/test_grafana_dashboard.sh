@@ -52,12 +52,16 @@ ruby -e '
   abort("unexpected variables: #{variable_names.inspect}") unless variable_names == ["datasource", "node"]
   abort("unexpected dashboard title") unless dashboard.fetch("title") == "ACK Load Test"
   abort("unexpected dashboard uid") unless dashboard.fetch("uid") == "ack-loadtest"
+
+  scheduled_panel = dashboard.fetch("panels").fetch(0)
+  scheduled_calcs = scheduled_panel.fetch("options").fetch("legend").fetch("calcs")
+  abort("scheduled pod panel should only show current lastNotNull value: #{scheduled_calcs.inspect}") unless scheduled_calcs == ["lastNotNull"]
 ' "${DASHBOARD}"
 
 assert_contains "${dashboard}" "\"name\": \"node\""
 assert_contains "${dashboard}" "label_values(node_memory_MemTotal_bytes, instance)"
 assert_contains "${dashboard}" "\"title\": \"Scheduled ACK pods per node\""
-assert_contains "${dashboard}" "kube_pod_info{namespace=\\\"default\\\",pod=~\\\".*ack.*\\\",node!=\\\"\\\"}"
+assert_contains "${dashboard}" "kube_pod_info{namespace=\\\"default\\\",pod=~\\\"ack-resource-consumer-.*\\\",node!=\\\"\\\"}"
 assert_contains "${dashboard}" "\"title\": \"Per-node hotspot probability, last 1m\""
 assert_contains "${dashboard}" "> bool 80"
 assert_contains "${dashboard}" "[1m:15s]"
@@ -98,6 +102,7 @@ for removed in \
   "Node memory usage - \$node" \
   "container_memory_working_set_bytes" \
   "container_cpu_usage_seconds_total" \
+  "pod=~\\\".*ack.*\\\"" \
   "\$deployment" \
   "\$container" \
   "\$threshold"; do

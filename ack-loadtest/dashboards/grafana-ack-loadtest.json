@@ -52,8 +52,7 @@
       "options": {
         "legend": {
           "calcs": [
-            "lastNotNull",
-            "max"
+            "lastNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -66,7 +65,7 @@
       },
       "targets": [
         {
-          "expr": "count by (node) (kube_pod_info{namespace=\"default\",pod=~\".*ack.*\",node!=\"\"})",
+          "expr": "count by (node) (kube_pod_info{namespace=\"default\",pod=~\"ack-resource-consumer-.*\",node!=\"\"})",
           "legendFormat": "{{node}}",
           "refId": "A"
         }
