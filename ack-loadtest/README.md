@@ -12,8 +12,8 @@ crpi-5s8klfipd4nbbznk.cn-shanghai.personal.cr.aliyuncs.com/usage-batch/usage-bat
 
 - 批量下发可配置副本数的 Deployment，默认 `10` 副本。
 - 每个 Pod 支持 `linear`、`java-spike`、`request-fixed` 三种加压曲线。
-- 默认资源规格对齐 ACK 样例 YAML：`cpu request=500m, limit=2`，`memory request=512Mi, limit=1Gi`。
-- 默认真实压力对齐 ACK 样例 YAML：`2` 个 CPU worker，`256M` 内存，保持 `600s`。
+- 默认资源规格对齐 `cce-loadtest`：`cpu request=200m, limit=250m`，`memory request=500Mi, limit=600Mi`。
+- 默认真实压力对齐 `cce-loadtest`：`200m` CPU，`500Mi` 内存，保持 `86400s`。
 - 支持 BestEffort Pod。
 - 支持普通滚动升级和 skewed 三 Deployment 滚动升级场景。
 - 支持 `kubectl top`、Prometheus PromQL 和 Grafana 观测节点水位、热点概率和 Pod 分布。
@@ -97,8 +97,8 @@ REPLICAS=58 ./run-deployment-load.sh apply
 
 默认曲线为 `LOAD_PROFILE=linear`，20 秒内逐步升到：
 
-- 内存：`256Mi`
-- CPU：`2000m`
+- 内存：`500Mi`
+- CPU：`200m`
 
 如果希望 Pod 启动后直接达到 request 对应压力：
 
@@ -106,7 +106,7 @@ REPLICAS=58 ./run-deployment-load.sh apply
 LOAD_PROFILE=request-fixed ./run-deployment-load.sh apply
 ```
 
-此时默认使用 `MEMORY_REQUEST=512Mi` 和 `CPU_REQUEST=500m` 作为真实压力。也可以显式分离 request 和真实压力：
+此时默认使用 `MEMORY_REQUEST=500Mi` 和 `CPU_REQUEST=200m` 作为真实压力。也可以显式分离 request 和真实压力：
 
 ```bash
 LOAD_PROFILE=request-fixed \
