@@ -122,7 +122,7 @@ Pod 预估值没有简单取 request，也没有直接取 limit，而是通过 `
 
 现实里，不同客户的资源声明质量差异很大。有些业务 request 配得比较准，稳定运行时和 request 接近；有些业务 request 偏低，启动期或高峰期会明显冲高。如果完全按 request 估算，容易低估突发业务；如果完全按 limit 估算，又可能把节点分数压得过低，降低集群利用率。两个比例参数给了用户调整空间。
 
-默认值偏稳妥：request 是主要依据，burst 部分默认不计入，避免所有 Pod 都按 limit 估算后过度分散。BestEffort Pod 则通过 `be_cpu` 和 `be_memory` 配置固定估算值，解决没有 request/limit 时完全无法入账的问题。
+默认值偏稳妥：request 是主要依据，burst 部分默认不计入，避免所有 Pod 都按 limit 估算后过度分散。BestEffort Pod 则通过 `be_cpu` 和 `be_mem` 配置固定估算值，解决没有 request/limit 时完全无法入账的问题。
 
 实现里还处理了几个容易出错的边界：
 
@@ -183,7 +183,7 @@ tiers:
             risk_threshold: 0.6
             risk_factor: 1.2
             be_cpu: 250m
-            be_memory: 200Mi
+            be_mem: 200Mi
 metrics:
   type: prometheus
   address: http://prometheus:9090
@@ -192,7 +192,7 @@ metrics:
 
 这里的 `metrics.interval` 不只影响指标拉取频率，也会用于判断监控盲区。对刚启动不久的 Running Pod，如果运行时间还没有覆盖这个 interval，插件会认为它仍可能没有进入外部指标，并把它纳入影子负载。
 
-调参时可以从业务特征出发。稳态业务可以保持较高的 `request_ratio`，让估算接近资源声明；突发业务可以适当提高 `burst_ratio`，降低 request 偏低带来的低估；对热点风险更敏感的业务，可以降低 `risk_threshold` 或提高 `risk_factor`；BestEffort 较多的集群，则需要结合历史运行数据校准 `be_cpu` 和 `be_memory`。
+调参时可以从业务特征出发。稳态业务可以保持较高的 `request_ratio`，让估算接近资源声明；突发业务可以适当提高 `burst_ratio`，降低 request 偏低带来的低估；对热点风险更敏感的业务，可以降低 `risk_threshold` 或提高 `risk_factor`；BestEffort 较多的集群，则需要结合历史运行数据校准 `be_cpu` 和 `be_mem`。
 
 ## 痛点、挑战、方案、亮点
 
@@ -227,7 +227,7 @@ metrics:
 - 批量新建：连续创建一批 Pod，观察增强前是否仍集中落到最初打分最高的节点，增强后节点分数是否会随影子负载下降。
 - 重部署：模拟客户日常发布，观察滚动重建过程中是否出现局部节点负载快速升高，增强后热点是否被削弱。
 - Gang 调度：构造部分 Pod 临时分配后整体调度失败的 PodGroup，验证 Deallocate 后影子负载是否准确回退。
-- BestEffort 或 request 偏低：验证 `be_cpu`、`be_memory`、`burst_ratio` 是否能降低无 request 或 request 偏低导致的节点压力低估。
+- BestEffort 或 request 偏低：验证 `be_cpu`、`be_mem`、`burst_ratio` 是否能降低无 request 或 request 偏低导致的节点压力低估。
 - 友商横向对比：在 CCE 和 ACK 构建相同任务模型，对比节点分布、热点持续时间、OOM 风险和业务恢复时间。
 
 [待补充：这里可以填入测试报告中的真实数据。建议按“场景、增强前现象、增强后现象、ACK/Koordinator 表现、结论”的顺序组织，但正式文章里不一定要使用表格，可以用分场景小段落呈现。]
@@ -252,7 +252,7 @@ metrics:
 
 根因不是调度器完全没有负载感知，而是外部指标存在延迟。新 Pod 已经被调度器分配出去，但资源消耗尚未进入节点利用率曲线。只看外部指标，调度器就会在短时间内低估目标节点压力。
 
-增强后的方案用资源预估和影子负载补上这段时间差。调度器把自己刚刚分配出去的新 Pod 临时记入节点打分；发生 Gang 调度回滚时，再按快照精确扣回；不同业务则通过 `request_ratio`、`burst_ratio`、`risk_threshold`、`risk_factor`、`be_cpu`、`be_memory` 调整估算策略。
+增强后的方案用资源预估和影子负载补上这段时间差。调度器把自己刚刚分配出去的新 Pod 临时记入节点打分；发生 Gang 调度回滚时，再按快照精确扣回；不同业务则通过 `request_ratio`、`burst_ratio`、`risk_threshold`、`risk_factor`、`be_cpu`、`be_mem` 调整估算策略。
 
 对用户来说，这个能力的价值很直接：在监控数据还没刷新前，调度器也能更早意识到某些节点已经承接了新负载，从而减少批量发布和重部署时制造新热点的概率。
 
