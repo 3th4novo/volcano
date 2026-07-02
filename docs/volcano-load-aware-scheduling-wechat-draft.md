@@ -16,7 +16,7 @@
 
 举个简单例子。节点 A 上的 Pod request 不高，按传统调度逻辑看还有空间；但节点 A 的真实 CPU 已经接近高水位。节点 B 上的 Pod request 很高，看起来资源快满了；实际 CPU 和内存却还比较空。如果调度器只看 request，新 Pod 很可能继续落到节点 A。业务跑起来后，节点 A 就变成热点。
 
-上一篇《基于 Volcano 实现节点真实负载感知调度》讲的就是这个问题：Kubernetes 默认调度主要根据 Pod request 和节点 allocatable 计算可调度资源。这个模型保证了 Kubernetes 的资源语义，但它不会自动知道节点此刻真实 CPU、内存利用率。
+Kubernetes 默认调度主要根据 Pod request 和节点 allocatable 计算可调度资源。这个模型保证了 Kubernetes 的资源语义，也让调度结果有稳定的边界；但它不会自动知道节点此刻真实 CPU、内存利用率。
 
 客户在主站业务迁移和日常发布中遇到的问题更集中。批量新建 Pod 或滚动重部署时，调度器会连续做很多次选择。如果某个节点在当时的指标里分数最高，大量 Pod 会被放到这个节点上。刚开始看不出问题，因为新 Pod 的资源消耗还没有进入监控曲线；等这些 Pod 真正启动后，节点已经热起来了。
 
@@ -190,7 +190,6 @@ Volcano usage 插件把真实指标、节点阈值、节点打分、影子负载
 
 ## 参考资料
 
-- [基于 Volcano 实现节点真实负载感知调度](https://mp.weixin.qq.com/s/Yn51YGVBdwqBmxnj5pecJA)
 - [Kubernetes Scheduler 官方文档](https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/)
 - [Kueue ClusterQueue 官方文档](https://kueue.sigs.k8s.io/docs/concepts/cluster_queue/)
 - [Koordinator Load Aware Scheduling 设计](https://github.com/koordinator-sh/koordinator/blob/main/docs/proposals/scheduling/20220510-load-aware-scheduling.md)
